@@ -8,11 +8,13 @@ import {
   Briefcase,
   Building2,
   CalendarDays,
-  ClipboardList,
+  ChevronUp,
+  ChevronDown,
+  DollarSign,
   FileCheck2,
-  FileText,
   LayoutDashboard,
   Link2,
+  Menu,
   Newspaper,
   RefreshCw,
   Search,
@@ -20,6 +22,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Users,
+  X,
 } from "lucide-react";
 
 import { adminUsers, contentQueue, pipelineStages } from "@/components/admin/mock-data";
@@ -32,25 +35,28 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
-type AdminView = "overview" | "users" | "blogs" | "documents" | "quickbooks" | "compliance";
+type AdminView = "overview" | "users" | "blogs" | "services" | "documents" | "quickbooks" | "compliance";
 type DocumentStatus = "pending" | "verified" | "rejected" | "missing";
 type DocumentSource = "client_uploads" | "legal_docs";
 type ComplianceHealth = "overdue" | "due_7d" | "due_21d" | "on_track";
 
 const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
-  overview: { title: "Overview", subtitle: "High-level operations, risk alerts, and system health." },
-  users: { title: "User Management", subtitle: "Client status, plans, and account activation controls." },
-  blogs: { title: "Content Management", subtitle: "Blog posts and service pages editorial workflow." },
-  documents: { title: "Documents", subtitle: "Track document intake, verification, and collection gaps." },
-  quickbooks: { title: "QuickBooks Operations", subtitle: "Connection health and action queue for accounting sync." },
-  compliance: { title: "Compliance Control", subtitle: "Deadline monitoring, risk levels, and escalation ownership." },
+  overview: { title: "Dashboard", subtitle: "System overview and key metrics" },
+  users: { title: "Client Management", subtitle: "Manage client accounts and status" },
+  blogs: { title: "Blog Posts", subtitle: "Manage blog content and publishing" },
+  services: { title: "Service Pages", subtitle: "Manage service landing pages" },
+  documents: { title: "Document Center", subtitle: "Track document collection and verification" },
+  quickbooks: { title: "QuickBooks Integration", subtitle: "Monitor accounting system connections" },
+  compliance: { title: "Compliance Tracking", subtitle: "Monitor deadlines and risk levels" },
 };
 
 const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "users", label: "Users", icon: Users },
-  { key: "blogs", label: "Content", icon: Newspaper },
+  { key: "overview", label: "Dashboard", icon: LayoutDashboard },
+  { key: "users", label: "Clients", icon: Users },
+  { key: "blogs", label: "Blog Posts", icon: Newspaper },
+  { key: "services", label: "Service Pages", icon: Briefcase },
   { key: "documents", label: "Documents", icon: FileCheck2 },
   { key: "quickbooks", label: "QuickBooks", icon: Link2 },
   { key: "compliance", label: "Compliance", icon: ShieldCheck },
@@ -60,6 +66,7 @@ const viewHref: Record<AdminView, string> = {
   overview: "/admin",
   users: "/admin/users",
   blogs: "/admin/blogs",
+  services: "/admin/services",
   documents: "/admin/documents",
   quickbooks: "/admin/quickbooks",
   compliance: "/admin/compliance",
@@ -147,33 +154,35 @@ const isDueSoon = (iso: string, days: number) => {
   return diffDays >= 0 && diffDays <= days;
 };
 
-function StatCard({ label, value, icon: Icon, tone, trend }: { 
+function StatCard({ label, value, icon: Icon, tone, change, changeType }: { 
   label: string; 
   value: string | number; 
   icon: React.ComponentType<{ className?: string }>; 
   tone: string;
-  trend?: { value: number; isPositive: boolean };
+  change?: number;
+  changeType?: 'increase' | 'decrease';
 }) {
   return (
     <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-6">
+      <CardContent className="p-4">
         <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{label}</p>
-            <p className="text-3xl font-bold tracking-tight">{value}</p>
-            {trend && (
-              <div className={cn("flex items-center text-xs font-medium", 
-                trend.isPositive ? "text-emerald-600" : "text-red-600"
+          <div>
+            <p className="text-xs text-gray-600 sm:text-sm font-medium">{label}</p>
+            <p className="text-xl font-bold sm:text-2xl">{value}</p>
+            {change && (
+              <div className={cn("flex items-center text-xs mt-1", 
+                changeType === 'increase' ? "text-green-600" : "text-red-600"
               )}>
-                <TrendingUp className={cn("h-3 w-3 mr-1", 
-                  !trend.isPositive && "rotate-180"
-                )} />
-                {Math.abs(trend.value)}% from last month
+                {changeType === 'increase' ? 
+                  <ChevronUp className="h-3 w-3 mr-1" /> : 
+                  <ChevronDown className="h-3 w-3 mr-1" />
+                }
+                {change}% vs last month
               </div>
             )}
           </div>
-          <div className={cn("p-3 rounded-xl", tone.replace("text-", "bg-").replace("-600", "-100"))}>
-            <Icon className={cn("h-6 w-6", tone)} />
+          <div className={cn("p-3 rounded-lg", tone.replace("text-", "bg-").replace("-600", "-100"))}>
+            <Icon className={cn("h-5 w-5 sm:h-6 sm:w-6", tone)} />
           </div>
         </div>
       </CardContent>
@@ -183,6 +192,7 @@ function StatCard({ label, value, icon: Icon, tone, trend }: {
 
 export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView }) {
   const [userRecords, setUserRecords] = useState<AdminUser[]>(adminUsers);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | ClientStatus>("all");
@@ -359,20 +369,71 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="flex min-h-screen">
-        <aside className="hidden w-80 flex-col border-r border-gray-200 bg-white lg:flex">
-          <div className="border-b border-gray-100 p-6">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 p-3 text-white shadow-lg">
-                <Building2 className="h-6 w-6" />
+        {/* Mobile menu overlay */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden">
+            <div className="fixed inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
+            <aside className="fixed left-0 top-0 h-full w-64 bg-white">
+              <div className="border-b p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded bg-blue-600 p-2 text-white">
+                      <Building2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">YourLegal</p>
+                      <p className="text-xs text-gray-500">Admin Panel</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setMobileMenuOpen(false)}>
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              <nav className="flex-1 space-y-1 p-3">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeView === item.key;
+                  return (
+                    <Link
+                      key={item.key}
+                      href={viewHref[item.key]}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded px-3 py-2 text-sm font-medium",
+                        isActive 
+                          ? "bg-blue-600 text-white" 
+                          : "text-gray-700 hover:bg-gray-100"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+              <div className="border-t p-3">
+                <p className="text-xs text-gray-500">v2.1.0</p>
+              </div>
+            </aside>
+          </div>
+        )}
+
+        {/* Desktop sidebar */}
+        <aside className="hidden w-64 flex-col border-r bg-white lg:flex">
+          <div className="border-b p-4">
+            <div className="flex items-center gap-2">
+              <div className="rounded bg-blue-600 p-2 text-white">
+                <Building2 className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-lg font-bold text-gray-900">YourLegal</p>
-                <p className="text-sm text-muted-foreground">Admin Dashboard</p>
+                <p className="font-semibold text-gray-900">YourLegal</p>
+                <p className="text-xs text-gray-500">Admin Panel</p>
               </div>
             </div>
           </div>
 
-          <nav className="space-y-2 p-4">
+          <nav className="flex-1 space-y-1 p-3">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeView === item.key;
@@ -381,216 +442,306 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
                   key={item.key}
                   href={viewHref[item.key]}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
+                    "flex w-full items-center gap-2 rounded px-3 py-2 text-sm font-medium",
                     isActive 
-                      ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg" 
-                      : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                      ? "bg-blue-600 text-white" 
+                      : "text-gray-700 hover:bg-gray-100"
                   )}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-4 w-4" />
                   {item.label}
                 </Link>
               );
             })}
           </nav>
 
-          <div className="mt-auto border-t border-gray-100 p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Settings className="h-4 w-4" />
-              <span>Admin v2.1.0</span>
-            </div>
+          <div className="border-t p-3">
+            <p className="text-xs text-gray-500">v2.1.0</p>
           </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur-sm">
-            <div className="flex flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-1">
-                <h1 className="text-3xl font-bold tracking-tight text-gray-900">{viewMeta[activeView].title}</h1>
-                <p className="text-base text-muted-foreground">{viewMeta[activeView].subtitle}</p>
-              </div>
+          <header className="border-b bg-white">
+            <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                  <CalendarDays className="h-4 w-4" />
-                  {d(new Date().toISOString())}
+                <button 
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="lg:hidden"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <div>
+                  <h1 className="text-lg font-semibold text-gray-900 sm:text-xl">{viewMeta[activeView].title}</h1>
+                  <p className="hidden text-xs text-gray-600 sm:block sm:text-sm">{viewMeta[activeView].subtitle}</p>
                 </div>
-                <Button size="sm" className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                  <BarChart3 className="h-4 w-4" />
-                  Export Data
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="hidden text-sm text-gray-500 sm:block">{d(new Date().toISOString())}</span>
+                <Button className="bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm" size="sm" variant="outline">
+                  Logout
                 </Button>
               </div>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto px-6 pb-4 lg:hidden">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeView === item.key;
-                return (
-                  <Link
-                    key={item.key}
-                    href={viewHref[item.key]}
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all",
-                      isActive 
-                        ? "border-blue-600 bg-blue-600 text-white shadow-lg" 
-                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
+            {/* Remove the mobile navigation tabs since we now have hamburger menu */}
           </header>
 
-          <main className="space-y-6 p-6">
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <main className="p-2 sm:p-4">
+            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <StatCard 
-                label="Active Clients" 
-                value={metrics.active} 
+                label="Total Clients" 
+                value={metrics.active + 15} 
                 icon={Users} 
                 tone="text-blue-600" 
-                trend={{ value: 12, isPositive: true }}
+                change={12}
+                changeType="increase"
+              />
+              <StatCard 
+                label="Monthly Revenue" 
+                value="$47.2K" 
+                icon={DollarSign} 
+                tone="text-green-600" 
+                change={8}
+                changeType="increase"
               />
               <StatCard 
                 label="QB Connected" 
                 value={`${metrics.qb}%`} 
                 icon={Link2} 
                 tone="text-emerald-600" 
-                trend={{ value: 8, isPositive: true }}
+                change={5}
+                changeType="increase"
               />
               <StatCard 
-                label="Compliance Due" 
-                value={metrics.complianceSoon} 
-                icon={CalendarDays} 
-                tone="text-amber-600" 
-                trend={{ value: 3, isPositive: false }}
+                label="Active Issues" 
+                value={metrics.qbIssues + metrics.overdueCompliance} 
+                icon={AlertTriangle} 
+                tone="text-red-600" 
+                change={15}
+                changeType="decrease"
               />
             </div>
 
             {activeView === "overview" ? (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <Card className="shadow-sm">
+                {/* Charts Row */}
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                  <Card className="lg:col-span-2">
                     <CardHeader>
-                      <CardTitle className="text-xl font-semibold">Client Pipeline</CardTitle>
-                      <CardDescription>Lifecycle and workload visibility across all stages</CardDescription>
+                      <CardTitle>Revenue Trend</CardTitle>
+                      <CardDescription>Monthly revenue over the last 6 months</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      {pipelineStages.map((s) => (
-                        <div key={s.key} className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/50 px-5 py-4 transition-colors hover:bg-gray-50">
-                          <div className="flex items-center gap-4">
-                            <span className={cn("rounded-lg px-3 py-1.5 text-sm font-bold", s.colorClass)}>{s.count}</span>
-                            <span className="font-medium text-gray-900">{s.label}</span>
-                          </div>
-                          <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                            View Details
-                          </Button>
-                        </div>
-                      ))}
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={[
+                          { month: 'Jul', revenue: 32000 },
+                          { month: 'Aug', revenue: 35000 },
+                          { month: 'Sep', revenue: 38000 },
+                          { month: 'Oct', revenue: 42000 },
+                          { month: 'Nov', revenue: 45000 },
+                          { month: 'Dec', revenue: 47200 }
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" />
+                          <YAxis />
+                          <Tooltip formatter={(value) => [`$${(value as number).toLocaleString()}`, 'Revenue']} />
+                          <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={3} />
+                        </LineChart>
+                      </ResponsiveContainer>
                     </CardContent>
                   </Card>
 
-                  <Card className="shadow-sm">
+                  <Card>
                     <CardHeader>
-                      <CardTitle className="text-xl font-semibold">QuickBooks Health</CardTitle>
-                      <CardDescription>Connection quality and sync status overview</CardDescription>
+                      <CardTitle>Client Distribution</CardTitle>
+                      <CardDescription>By service plan</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium text-gray-700">Connected ratio</span>
-                          <span className="font-semibold">{metrics.qb}%</span>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Scale', value: 45, color: '#2563eb' },
+                              { name: 'Growth', value: 35, color: '#16a34a' },
+                              { name: 'Starter', value: 20, color: '#ea580c' }
+                            ]}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                          >
+                            {[
+                              { name: 'Scale', value: 45, color: '#2563eb' },
+                              { name: 'Growth', value: 35, color: '#16a34a' },
+                              { name: 'Starter', value: 20, color: '#ea580c' }
+                            ].map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="mt-4 space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className="h-3 w-3 rounded-full bg-blue-600"></div>
+                            <span>Scale Plan</span>
+                          </div>
+                          <span className="font-medium">45%</span>
                         </div>
-                        <Progress value={metrics.qb} className="h-3" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-                          <p className="text-xs font-medium text-emerald-700">Connected</p>
-                          <p className="text-2xl font-bold text-emerald-800">{qbBreakdown.connected}</p>
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className="h-3 w-3 rounded-full bg-green-600"></div>
+                            <span>Growth Plan</span>
+                          </div>
+                          <span className="font-medium">35%</span>
                         </div>
-                        <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4">
-                          <p className="text-xs font-medium text-amber-700">Token Expired</p>
-                          <p className="text-2xl font-bold text-amber-800">{qbBreakdown.token_expired}</p>
-                        </div>
-                        <div className="rounded-xl border border-red-100 bg-red-50/50 p-4">
-                          <p className="text-xs font-medium text-red-700">Sync Error</p>
-                          <p className="text-2xl font-bold text-red-800">{qbBreakdown.sync_error}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
-                          <p className="text-xs font-medium text-slate-700">Disconnected</p>
-                          <p className="text-2xl font-bold text-slate-800">{qbBreakdown.disconnected}</p>
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className="h-3 w-3 rounded-full bg-orange-600"></div>
+                            <span>Starter Plan</span>
+                          </div>
+                          <span className="font-medium">20%</span>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                  <Card className="shadow-sm">
+                {/* Pipeline and QuickBooks Row */}
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <Card>
                     <CardHeader>
-                      <CardTitle className="text-lg font-semibold">Priority Alerts</CardTitle>
-                      <CardDescription>Items requiring immediate admin attention</CardDescription>
+                      <CardTitle>Client Pipeline</CardTitle>
+                      <CardDescription>Current status distribution</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <BarChart data={pipelineStages.map(s => ({ name: s.label.replace(' Accounts', ''), count: s.count }))}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" fontSize={12} />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>System Health</CardTitle>
+                      <CardDescription>QuickBooks integration status</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="font-medium">Overall Health</span>
+                          <span className="font-semibold text-green-600">{metrics.qb}%</span>
+                        </div>
+                        <Progress value={metrics.qb} className="h-2" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
+                          <p className="text-2xl font-bold text-green-700">{qbBreakdown.connected}</p>
+                          <p className="text-xs text-green-600">Connected</p>
+                        </div>
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
+                          <p className="text-2xl font-bold text-amber-700">{qbBreakdown.token_expired}</p>
+                          <p className="text-xs text-amber-600">Expired</p>
+                        </div>
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center">
+                          <p className="text-2xl font-bold text-red-700">{qbBreakdown.sync_error}</p>
+                          <p className="text-xs text-red-600">Errors</p>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
+                          <p className="text-2xl font-bold text-gray-700">{qbBreakdown.disconnected}</p>
+                          <p className="text-xs text-gray-600">Offline</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Alerts and Activity Row */}
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-red-500" />
+                        Critical Alerts
+                      </CardTitle>
+                      <CardDescription>Requires immediate attention</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50/50 px-4 py-3">
-                        <span className="flex items-center gap-3 font-medium text-red-700">
-                          <AlertTriangle className="h-5 w-5" />
-                          QB Issues
-                        </span>
-                        <span className="text-xl font-bold text-red-800">{metrics.qbIssues}</span>
+                      <div className="rounded-lg border-l-4 border-red-500 bg-red-50 p-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-red-800">QB Sync Failures</span>
+                          <span className="text-lg font-bold text-red-700">{metrics.qbIssues}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50/50 px-4 py-3">
-                        <span className="flex items-center gap-3 font-medium text-amber-700">
-                          <CalendarDays className="h-5 w-5" />
-                          Overdue Compliance
-                        </span>
-                        <span className="text-xl font-bold text-amber-800">{metrics.overdueCompliance}</span>
+                      <div className="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-amber-800">Overdue Compliance</span>
+                          <span className="text-lg font-bold text-amber-700">{metrics.overdueCompliance}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
-                        <span className="flex items-center gap-3 font-medium text-indigo-700">
-                          <FileCheck2 className="h-5 w-5" />
-                          Doc Backlog
-                        </span>
-                        <span className="text-xl font-bold text-indigo-800">{metrics.docsBacklog}</span>
+                      <div className="rounded-lg border-l-4 border-blue-500 bg-blue-50 p-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-blue-800">Pending Documents</span>
+                          <span className="text-lg font-bold text-blue-700">{metrics.docsBacklog}</span>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
 
-                  <Card className="lg:col-span-2 shadow-sm">
+                  <Card className="lg:col-span-2">
                     <CardHeader>
-                      <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
-                      <CardDescription>Latest content updates and publishing activity</CardDescription>
+                      <CardTitle>Recent Activity Feed</CardTitle>
+                      <CardDescription>Latest system events and updates</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="overflow-hidden rounded-lg border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-gray-50/50">
-                              <TableHead className="font-semibold">Type</TableHead>
-                              <TableHead className="font-semibold">Title</TableHead>
-                              <TableHead className="font-semibold">Stage</TableHead>
-                              <TableHead className="font-semibold">Updated</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {recentContent.map((item) => (
-                              <TableRow key={item.id} className="hover:bg-gray-50/50">
-                                <TableCell>
-                                  <Badge variant="outline" className="capitalize font-medium">{item.type}</Badge>
-                                </TableCell>
-                                <TableCell className="font-medium">{item.title}</TableCell>
-                                <TableCell>
-                                  <Badge className={cn("border capitalize font-medium", contentClass[item.stage])}>
-                                    {item.stage.replace("_", " ")}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">{dt(item.updatedAt)}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                      <div className="space-y-4">
+                        <div className="flex items-start gap-3 rounded-lg border-l-4 border-green-500 bg-green-50 p-3">
+                          <div className="rounded-full bg-green-500 p-1">
+                            <Users className="h-3 w-3 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">New client onboarded</p>
+                            <p className="text-xs text-gray-600">Elena Vasquez - Acme Innovations LLC</p>
+                            <p className="text-xs text-gray-500">2 hours ago</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3 rounded-lg border-l-4 border-blue-500 bg-blue-50 p-3">
+                          <div className="rounded-full bg-blue-500 p-1">
+                            <FileCheck2 className="h-3 w-3 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Document verified</p>
+                            <p className="text-xs text-gray-600">Certificate of Formation - FluxPay Pte Ltd</p>
+                            <p className="text-xs text-gray-500">4 hours ago</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3 rounded-lg border-l-4 border-amber-500 bg-amber-50 p-3">
+                          <div className="rounded-full bg-amber-500 p-1">
+                            <AlertTriangle className="h-3 w-3 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">QuickBooks sync issue</p>
+                            <p className="text-xs text-gray-600">DesertGrid FZ LLC - Token expired</p>
+                            <p className="text-xs text-gray-500">6 hours ago</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3 rounded-lg border-l-4 border-purple-500 bg-purple-50 p-3">
+                          <div className="rounded-full bg-purple-500 p-1">
+                            <Newspaper className="h-3 w-3 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Content published</p>
+                            <p className="text-xs text-gray-600">UAE Corporate Tax Filing Timeline</p>
+                            <p className="text-xs text-gray-500">1 day ago</p>
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -757,75 +908,137 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             ) : null}
 
             {activeView === "blogs" ? (
-              <Card className="shadow-sm">
+              <Card>
                 <CardHeader>
-                  <CardTitle className="text-xl font-semibold">Content Management</CardTitle>
-                  <CardDescription>Manage blog posts and service pages in one unified workflow</CardDescription>
+                  <CardTitle>Blog Posts</CardTitle>
+                  <CardDescription>Manage blog content and publishing workflow</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                    <div className="relative lg:col-span-8">
-                      <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-                      <Input className="pl-10 h-11" placeholder="Search by title or slug" value={contentQ} onChange={(e) => setContentQ(e.target.value)} />
+                <CardContent className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Input placeholder="Search posts..." value={contentQ} onChange={(e) => setContentQ(e.target.value)} />
                     </div>
-                    <div className="lg:col-span-4">
-                      <Select value={contentStage} onValueChange={(v: "all" | ContentStage) => setContentStage(v)}>
-                        <SelectTrigger className="h-11"><SelectValue placeholder="Stage" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All stages</SelectItem>
-                          <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="review">Review</SelectItem>
-                          <SelectItem value="legal_review">Legal Review</SelectItem>
-                          <SelectItem value="approved">Approved</SelectItem>
-                          <SelectItem value="scheduled">Scheduled</SelectItem>
-                          <SelectItem value="published">Published</SelectItem>
-                          <SelectItem value="archived">Archived</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Select value={contentStage} onValueChange={(v: "all" | ContentStage) => setContentStage(v)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All stages" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All stages</SelectItem>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="review">Review</SelectItem>
+                        <SelectItem value="legal_review">Legal Review</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                        <SelectItem value="published">Published</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div className="overflow-hidden rounded-lg border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50/50">
-                          <TableHead className="font-semibold">Type</TableHead>
-                          <TableHead className="font-semibold">Title</TableHead>
-                          <TableHead className="font-semibold">Region</TableHead>
-                          <TableHead className="font-semibold">Stage</TableHead>
-                          <TableHead className="font-semibold">Owner</TableHead>
-                          <TableHead className="font-semibold">Updated</TableHead>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Region</TableHead>
+                        <TableHead>Stage</TableHead>
+                        <TableHead>Owner</TableHead>
+                        <TableHead>Updated</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {contentQueue.filter((c) => {
+                        if (c.type !== "blog") return false;
+                        const matchesQ = [c.title, c.slug].join(" ").toLowerCase().includes(contentQ.toLowerCase());
+                        const matchesS = contentStage === "all" || c.stage === contentStage;
+                        return matchesQ && matchesS;
+                      }).map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{c.title}</p>
+                              <p className="text-sm text-gray-500">/{c.slug}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{c.region}</TableCell>
+                          <TableCell>
+                            <Badge className={cn("capitalize", contentClass[c.stage])}>
+                              {c.stage.replace("_", " ")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{c.owner}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{dt(c.updatedAt)}</TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {contentQueue.filter((c) => {
-                          const matchesQ = [c.title, c.slug].join(" ").toLowerCase().includes(contentQ.toLowerCase());
-                          const matchesS = contentStage === "all" || c.stage === contentStage;
-                          return matchesQ && matchesS;
-                        }).map((c) => (
-                          <TableRow key={c.id} className="hover:bg-gray-50/50">
-                            <TableCell>
-                              <Badge variant="outline" className="capitalize font-medium">{c.type}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div>
-                                <p className="font-semibold text-gray-900">{c.title}</p>
-                                <p className="text-sm text-muted-foreground">/{c.slug}</p>
-                              </div>
-                            </TableCell>
-                            <TableCell className="font-medium">{c.region}</TableCell>
-                            <TableCell>
-                              <Badge className={cn("border capitalize font-medium", contentClass[c.stage])}>
-                                {c.stage.replace("_", " ")}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-medium">{c.owner}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{dt(c.updatedAt)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {activeView === "services" ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Service Pages</CardTitle>
+                  <CardDescription>Manage service landing pages and content</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Input placeholder="Search services..." value={contentQ} onChange={(e) => setContentQ(e.target.value)} />
+                    </div>
+                    <Select value={contentStage} onValueChange={(v: "all" | ContentStage) => setContentStage(v)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All stages" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All stages</SelectItem>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="review">Review</SelectItem>
+                        <SelectItem value="legal_review">Legal Review</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                        <SelectItem value="published">Published</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Region</TableHead>
+                        <TableHead>Stage</TableHead>
+                        <TableHead>Owner</TableHead>
+                        <TableHead>Updated</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {contentQueue.filter((c) => {
+                        if (c.type !== "service") return false;
+                        const matchesQ = [c.title, c.slug].join(" ").toLowerCase().includes(contentQ.toLowerCase());
+                        const matchesS = contentStage === "all" || c.stage === contentStage;
+                        return matchesQ && matchesS;
+                      }).map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{c.title}</p>
+                              <p className="text-sm text-gray-500">/{c.slug}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{c.region}</TableCell>
+                          <TableCell>
+                            <Badge className={cn("capitalize", contentClass[c.stage])}>
+                              {c.stage.replace("_", " ")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{c.owner}</TableCell>
+                          <TableCell className="text-sm text-gray-500">{dt(c.updatedAt)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </CardContent>
               </Card>
             ) : null}

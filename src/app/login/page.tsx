@@ -1,0 +1,123 @@
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import Image from 'next/image';
+import { useAuth, useUser } from '@/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Loader2, ArrowLeft } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const auth = useAuth();
+  const { user, isUserLoading } = useUser();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isUserLoading && user) {
+      router.push('/dashboard');
+    }
+  }, [user, isUserLoading, router]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Let the useEffect handle the navigation
+    } catch (error: any) {
+      let friendlyMessage = "An unexpected error occurred. Please try again.";
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        friendlyMessage = "Invalid email or password. Please try again.";
+      }
+      setError(friendlyMessage);
+      setLoading(false);
+    }
+  };
+
+  if (isUserLoading || user) {
+    return (
+        <div className="flex justify-center items-center min-h-screen bg-gray-50">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-700" />
+        </div>
+    );
+  }
+
+  return (
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-blue-100 p-4">
+       <Link href="/" className="absolute top-8 left-8 text-gray-600 hover:text-gray-900 transition-colors">
+          <ArrowLeft className="h-6 w-6" />
+        </Link>
+      <div className="mb-8">
+        <Link href="/">
+          <Image src="/logo.png" alt="YourLegal Logo" width={180} height={40} />
+        </Link>
+      </div>
+      <Card className="w-full max-w-sm shadow-2xl border-gray-200">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Welcome Back!</CardTitle>
+          <CardDescription>
+            Enter your email to sign in to your portal.
+          </CardDescription>
+        </CardHeader>
+        <form onSubmit={handleLogin}>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@company.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="bg-gray-50"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-gray-50"
+              />
+            </div>
+            {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
+          </CardContent>
+          <CardFooter className="flex flex-col gap-4">
+            <Button className="w-full font-bold shadow-lg shadow-blue-200" type="submit" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Sign In
+            </Button>
+            <p className="text-sm text-center text-gray-600">
+              Don't have an account?{' '}
+              <Link href="/signup" className="font-semibold text-blue-600 hover:underline">
+                Sign up
+              </Link>
+            </p>
+          </CardFooter>
+        </form>
+      </Card>
+    </div>
+  );
+}

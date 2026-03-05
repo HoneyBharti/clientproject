@@ -1,0 +1,29 @@
+
+rules_version = '2';
+
+// HINDI COMMENT: यह नियम Firebase Storage में फ़ाइलों तक पहुंच को नियंत्रित करते हैं।
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // HINDI COMMENT: यह फंक्शन जांचता है कि उपयोगकर्ता Super Admin है या नहीं।
+    // एडमिन की पहचान 'contactus@yourlegal.in' ईमेल से होती है।
+    function isTeamMember() {
+      return request.auth != null && request.auth.token.email == 'contactus@yourlegal.in';
+    }
+
+    // HINDI COMMENT: यह नियम Super Admin को किसी भी उपयोगकर्ता के फ़ोल्डर में सभी फ़ाइलों तक पूरी पहुँच देता है।
+    match /companies/{userId}/{allPaths=**} {
+        allow read, write: if isTeamMember();
+    }
+    
+    // HINDI COMMENT: यह नियम एक क्लाइंट को केवल अपने 'client_uploads' फ़ोल्डर में दस्तावेज़ अपलोड करने की अनुमति देता है।
+    match /companies/{userId}/client_uploads/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // HINDI COMMENT: यह नियम एक क्लाइंट को 'legal_docs' फ़ोल्डर से दस्तावेज़ केवल पढ़ने (download) की अनुमति देता है, लिखने की नहीं।
+    match /companies/{userId}/legal_docs/{allPaths=**} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

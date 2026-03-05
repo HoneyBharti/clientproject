@@ -1,0 +1,524 @@
+
+{
+  "entities": {
+    "Company": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Company",
+      "type": "object",
+      "description": "Represents a company using the LegalEase AI platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Company entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the company."
+        },
+        "incorporationDate": {
+          "type": "string",
+          "description": "The date the company was incorporated.",
+          "format": "date-time"
+        },
+        "formationState": {
+          "type": "string",
+          "description": "The state in which the company was formed."
+        },
+        "registeredAgent": {
+          "type": "string",
+          "description": "The company's registered agent."
+        },
+        "ein": {
+          "type": "string",
+          "description": "The company's Employer Identification Number."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Company)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "incorporationDate",
+        "userId"
+      ]
+    },
+    "ComplianceDate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ComplianceDate",
+      "type": "object",
+      "description": "Represents a compliance date for a company.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ComplianceDate entity."
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "The date the compliance task is due.",
+          "format": "date-time"
+        },
+        "completedDate": {
+          "type": "string",
+          "description": "The date the compliance task was completed.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the compliance task."
+        },
+        "companyId": {
+          "type": "string",
+          "description": "Reference to Company. (Relationship: Company 1:N ComplianceDate)"
+        }
+      },
+      "required": [
+        "id",
+        "dueDate",
+        "description",
+        "companyId"
+      ]
+    },
+    "Document": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Document",
+      "type": "object",
+      "description": "Represents a company document stored in the cloud.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Document entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the document."
+        },
+        "uploadDate": {
+          "type": "string",
+          "description": "The date the document was uploaded.",
+          "format": "date-time"
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "The URL of the document in cloud storage.",
+          "format": "uri"
+        },
+        "companyId": {
+          "type": "string",
+          "description": "Reference to Company. (Relationship: Company 1:N Document)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "uploadDate",
+        "fileUrl",
+        "companyId"
+      ]
+    },
+    "BankAccount": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "BankAccount",
+      "type": "object",
+      "description": "Represents a bank account connected to the platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the BankAccount entity."
+        },
+        "accountName": {
+          "type": "string",
+          "description": "The name of the bank account."
+        },
+        "accountNumber": {
+          "type": "string",
+          "description": "The account number."
+        },
+        "routingNumber": {
+          "type": "string",
+          "description": "The routing number."
+        },
+        "companyId": {
+          "type": "string",
+          "description": "Reference to Company. (Relationship: Company 1:N BankAccount)"
+        }
+      },
+      "required": [
+        "id",
+        "accountName",
+        "accountNumber",
+        "routingNumber",
+        "companyId"
+      ]
+    },
+    "Transaction": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Transaction",
+      "type": "object",
+      "description": "Represents a transaction from a connected bank account.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Transaction entity."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date of the transaction.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the transaction."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The amount of the transaction."
+        },
+        "bankAccountId": {
+          "type": "string",
+          "description": "Reference to BankAccount. (Relationship: BankAccount 1:N Transaction)"
+        }
+      },
+      "required": [
+        "id",
+        "date",
+        "description",
+        "amount",
+        "bankAccountId"
+      ]
+    },
+    "Invoice": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Invoice",
+      "type": "object",
+      "description": "Represents an invoice.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Invoice entity."
+        },
+        "invoiceNumber": {
+          "type": "string",
+          "description": "The invoice number."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date of the invoice.",
+          "format": "date-time"
+        },
+        "amount": {
+          "type": "number",
+          "description": "The amount of the invoice."
+        },
+        "companyId": {
+          "type": "string",
+          "description": "Reference to Company. (Relationship: Company 1:N Invoice)"
+        }
+      },
+      "required": [
+        "id",
+        "invoiceNumber",
+        "date",
+        "amount",
+        "companyId"
+      ]
+    },
+    "ChartOfAccounts": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ChartOfAccounts",
+      "type": "object",
+      "description": "Represents a chart of accounts.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ChartOfAccounts entity."
+        },
+        "accountName": {
+          "type": "string",
+          "description": "The name of the account."
+        },
+        "accountType": {
+          "type": "string",
+          "description": "The type of the account (e.g., asset, liability, equity, revenue, expense)."
+        },
+        "companyId": {
+          "type": "string",
+          "description": "Reference to Company. (Relationship: Company 1:N ChartOfAccounts)"
+        }
+      },
+      "required": [
+        "id",
+        "accountName",
+        "accountType",
+        "companyId"
+      ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the LegalEase AI platform.  Authentication data is not included in this entity.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address.",
+          "format": "email"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "The user's full name."
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "fullName"
+      ]
+    },
+    "QuickBooksConnection": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "QuickBooksConnection",
+      "type": "object",
+      "description": "Stores OAuth 2.0 tokens for a user's QuickBooks integration.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier, typically the user's UID."
+        },
+        "accessToken": {
+          "type": "string",
+          "description": "The encrypted OAuth 2.0 access token."
+        },
+        "refreshToken": {
+          "type": "string",
+          "description": "The encrypted OAuth 2.0 refresh token."
+        },
+        "realmId": {
+          "type": "string",
+          "description": "The QuickBooks company ID."
+        },
+        "connectedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the connection was established."
+        },
+        "status": {
+            "type": "string",
+            "enum": ["active", "disconnected", "error"],
+            "description": "The current status of the connection."
+        }
+      },
+      "required": ["id", "accessToken", "refreshToken", "realmId", "connectedAt", "status"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles.  User ID is derived from Firebase Auth.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}",
+        "definition": {
+          "entityName": "Company",
+          "schema": {
+            "$ref": "#/backend/entities/Company"
+          },
+          "description": "Stores company profiles owned by a specific user. Access is restricted to the owning user.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}/complianceDates/{complianceDateId}",
+        "definition": {
+          "entityName": "ComplianceDate",
+          "schema": {
+            "$ref": "#/backend/entities/ComplianceDate"
+          },
+          "description": "Stores compliance dates for a specific company. Access is restricted to the owner of the company.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            },
+            {
+              "name": "complianceDateId",
+              "description": "The unique identifier for the compliance date."
+            }
+          ]
+        }
+      },
+       {
+        "path": "/users/{userId}/connections/quickbooks",
+        "definition": {
+          "entityName": "QuickBooksConnection",
+          "schema": { "$ref": "#/backend/entities/QuickBooksConnection" },
+          "description": "Stores the OAuth tokens for a user's QuickBooks connection."
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}/documents/{documentId}",
+        "definition": {
+          "entityName": "Document",
+          "schema": {
+            "$ref": "#/backend/entities/Document"
+          },
+          "description": "Stores documents for a specific company. Access is restricted to the owner of the company.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            },
+            {
+              "name": "documentId",
+              "description": "The unique identifier for the document."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}/bankAccounts/{bankAccountId}",
+        "definition": {
+          "entityName": "BankAccount",
+          "schema": {
+            "$ref": "#/backend/entities/BankAccount"
+          },
+          "description": "Stores bank accounts for a specific company. Access is restricted to the owner of the company.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            },
+            {
+              "name": "bankAccountId",
+              "description": "The unique identifier for the bank account."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}/bankAccounts/{bankAccountId}/transactions/{transactionId}",
+        "definition": {
+          "entityName": "Transaction",
+          "schema": {
+            "$ref": "#/backend/entities/Transaction"
+          },
+          "description": "Stores transactions for a specific bank account. Access is restricted to the owner of the company.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            },
+            {
+              "name": "bankAccountId",
+              "description": "The unique identifier for the bank account."
+            },
+            {
+              "name": "transactionId",
+              "description": "The unique identifier for the transaction."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}/invoices/{invoiceId}",
+        "definition": {
+          "entityName": "Invoice",
+          "schema": {
+            "$ref": "#/backend/entities/Invoice"
+          },
+          "description": "Stores invoices for a specific company. Access is restricted to the owner of the company.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            },
+            {
+              "name": "invoiceId",
+              "description": "The unique identifier for the invoice."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/companies/{companyId}/chartOfAccounts/{chartOfAccountsId}",
+        "definition": {
+          "entityName": "ChartOfAccounts",
+          "schema": {
+            "$ref": "#/backend/entities/ChartOfAccounts"
+          },
+          "description": "Stores chart of accounts for a specific company. Access is restricted to the owner of the company.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user, matching the Firebase Auth UID."
+            },
+            {
+              "name": "companyId",
+              "description": "The unique identifier for the company."
+            },
+            {
+              "name": "chartOfAccountsId",
+              "description": "The unique identifier for the chart of accounts."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to ensure Authorization Independence, DBAC, and support secure list operations (QAPs). User-owned data is structured under the `/users/{userId}` path to leverage path-based authorization. Company data and its related subcollections are structured under `/users/{userId}/companies/{companyId}` to maintain a clear ownership hierarchy. This approach allows security rules to be written based on the path and avoids complex `get()` calls.  Specifically, data belonging to a company (compliance dates, documents, bank accounts, invoices, chart of accounts) is nested under the company document. This ensures that access to these subcollections is controlled by ownership of the parent company document, achieved via path-based rules.\n\nSince the `Company` entity includes a `userId` property, we leverage path based rules that check if `request.auth.uid == userId` to ensure proper access control.\n\nQAPs are supported because all documents within a collection share the same security requirements. List operations are secured using rules that check ownership based on the path and the `userId` field in the documents."
+  }
+}
+
+    

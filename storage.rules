@@ -1,0 +1,32 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper Function: Check if user is the YourLegal Team (Super Admin)
+    // Replace 'admin@yourlegal.in' with your actual admin email
+    function isTeamMember() {
+      return request.auth != null && request.auth.token.email == 'admin@yourlegal.com';
+    }
+
+    // Rule for the root /companies/{userId} folder
+    match /companies/{userId}/{allPaths=**} {
+        // The Super Admin can read and write any file in any user's folder.
+        // This provides the necessary permissions to manage all documents.
+        allow read, write: if isTeamMember();
+    }
+    
+    // Rule specific to the client's own upload directory
+    match /companies/{userId}/client_uploads/{allPaths=**} {
+      // The client user (owner of the folder) can read and write ONLY
+      // to their own 'client_uploads' directory. They cannot access other folders.
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rule specific to the legal documents directory uploaded by the admin
+    match /companies/{userId}/legal_docs/{allPaths=**} {
+        // The client user can ONLY READ documents from the 'legal_docs' folder.
+        // They cannot write, update, or delete files uploaded by the admin.
+        allow read: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

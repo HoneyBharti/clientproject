@@ -1,0 +1,47 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if a user is the owner
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Users can read their own user document.
+    // They can create it if they are the owner.
+    // They can only write to it if they are the owner.
+    match /users/{userId} {
+      allow read, update: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+
+      // Companies and all subcollections
+      // User can create a company if they are the owner.
+      // They can read, write, and delete if they are the owner.
+      match /companies/{companyId} {
+         allow read, write: if isOwner(userId);
+         allow create: if isOwner(userId) && request.resource.data.userId == userId;
+         
+        match /{allSubcollections=**} {
+            allow read, write: if isOwner(userId);
+        }
+      }
+      
+      // Bills collection (for webhooks)
+      match /bills/{billId} {
+        allow read: if isOwner(userId);
+        // Only backend can write
+        allow write: if false; 
+      }
+      
+      // Rule for QuickBooks Connection data
+      match /connections/quickbooks {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
+
+
+
+    

@@ -18,7 +18,6 @@ import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { API_BASE_URL } from '@/lib/api-base';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -33,23 +32,12 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await login(email, password);
-      
-      // Check user role and redirect accordingly
-      const response = await fetch(`${API_BASE_URL}/auth/me`, {
-        credentials: 'include',
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.user.role === 'admin') {
-          router.push('/admin');
-        } else {
-          // Always redirect regular users to dashboard
-          router.push('/dashboard');
-        }
+      const user = await login(email, password);
+
+      if (user.role === 'admin') {
+        router.replace('/admin');
       } else {
-        router.push('/dashboard');
+        router.replace('/dashboard');
       }
     } catch (error: any) {
       setError(error.message || "Invalid email or password. Please try again.");

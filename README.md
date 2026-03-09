@@ -1,5 +1,15 @@
-# Firebase Studio
+# YourLegal Repo
 
-This is a NextJS starter in Firebase Studio.
+## Apps
 
-To get started, take a look at src/app/page.tsx.
+- `frontend/` - Next.js frontend app for Vercel deployment
+- `backend/` - Express API backend
+
+## Local commands
+
+- `npm run dev:frontend`
+- `npm run dev:backend`
+
+## Vercel
+
+Set the Vercel project root directory to `frontend`.

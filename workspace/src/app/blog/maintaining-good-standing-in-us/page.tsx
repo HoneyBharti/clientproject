@@ -4,8 +4,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ShieldCheck, FileText, Landmark, Building, AlertTriangle } from 'lucide-react';
-import { NavHeader } from '@/components/page-header';
-import { AppFooter } from '@/components/page-footer';
+import { NavHeader } from '@/components/layout/page-header';
+import { AppFooter } from '@/components/layout/page-footer';
 
 const AiAnswerBlock = () => {
     const aiBlocks = [
@@ -45,7 +45,13 @@ const AiAnswerBlock = () => {
     );
 };
 
-const BlogSection = ({ title, icon, children }) => (
+type BlogSectionProps = {
+  title: string;
+  icon: React.ElementType;
+  children: React.ReactNode;
+};
+
+const BlogSection = ({ title, icon, children }: BlogSectionProps) => (
   <div className="mb-12">
     <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center">
       {React.createElement(icon, { className: 'w-7 h-7 mr-3 text-blue-600' })}

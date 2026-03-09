@@ -47,12 +47,15 @@ import {
 } from "@/components/ui/select";
 import { ProfitAndLossReport } from '@/components/dashboard/pnl-report';
 import { useToast } from '@/hooks/use-toast';
+import { API_BASE_URL } from '@/lib/api-base';
 import axios from 'axios';
 
 
 // =====================================================================
 // --- DASHBOARD PORTAL COMPONENTS ---
 // =====================================================================
+
+const QUICKBOOKS_API_BASE = `${API_BASE_URL}/quickbooks`;
 
 // Mock Data for the Enhanced Dashboard
 const mockMetrics = [
@@ -833,7 +836,7 @@ const ChartOfAccounts = ({ isQuickBooksLinked, userId }) => {
         if (!isQuickBooksLinked || !userId) return;
         setIsLoading(true);
         try {
-            const response = await fetch('http://localhost:5000/api/quickbooks/proxy', {
+            const response = await fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -868,7 +871,7 @@ const ChartOfAccounts = ({ isQuickBooksLinked, userId }) => {
         };
 
         try {
-            const response = await fetch('http://localhost:5000/api/quickbooks/proxy', {
+            const response = await fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -1088,19 +1091,19 @@ const BookkeepingSection = ({ activePath, isQuickBooksLinked, userId, onQuickBoo
                 setError(null);
                 try {
                     const [billsRes, invoicesRes, pnlRes] = await Promise.all([
-                        fetch('http://localhost:5000/api/quickbooks/proxy', {
+                        fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             credentials: 'include',
                             body: JSON.stringify({ method: 'GET', url: 'query?query=select * from Bill' })
                         }),
-                        fetch('http://localhost:5000/api/quickbooks/proxy', {
+                        fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             credentials: 'include',
                             body: JSON.stringify({ method: 'GET', url: 'query?query=select * from Invoice' })
                         }),
-                        fetch('http://localhost:5000/api/quickbooks/proxy', {
+                        fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             credentials: 'include',
@@ -1506,7 +1509,7 @@ export default function PortalPage({ onLogout }) {
     useEffect(() => {
         const checkConnection = async () => {
             try {
-                const response = await fetch('http://localhost:5000/api/quickbooks/status', {
+                const response = await fetch(`${QUICKBOOKS_API_BASE}/status`, {
                     credentials: 'include',
                 });
                 const data = await response.json();
@@ -1523,7 +1526,7 @@ export default function PortalPage({ onLogout }) {
     const handleQuickBooksConnect = async () => {
         if (user) {
             try {
-                const response = await fetch('http://localhost:5000/api/quickbooks/auth-url', {
+                const response = await fetch(`${QUICKBOOKS_API_BASE}/auth-url`, {
                     credentials: 'include',
                 });
                 const data = await response.json();
@@ -1542,7 +1545,7 @@ export default function PortalPage({ onLogout }) {
 
     const handleQuickBooksDisconnect = async () => {
         try {
-            await fetch('http://localhost:5000/api/quickbooks/disconnect', {
+            await fetch(`${QUICKBOOKS_API_BASE}/disconnect`, {
                 method: 'POST',
                 credentials: 'include',
             });

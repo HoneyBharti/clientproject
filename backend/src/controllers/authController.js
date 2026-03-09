@@ -28,17 +28,22 @@ exports.register = async (req, res) => {
     const token = generateToken(user._id);
     req.session.token = token;
     req.session.userId = user._id;
-
-    res.status(201).json({
-      success: true,
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        companyName: user.companyName
+    req.session.save((sessionError) => {
+      if (sessionError) {
+        return res.status(500).json({ message: 'Unable to create session.' });
       }
+
+      res.status(201).json({
+        success: true,
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          companyName: user.companyName
+        }
+      });
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -61,16 +66,21 @@ exports.login = async (req, res) => {
     const token = generateToken(user._id);
     req.session.token = token;
     req.session.userId = user._id;
-
-    res.json({
-      success: true,
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
+    req.session.save((sessionError) => {
+      if (sessionError) {
+        return res.status(500).json({ message: 'Unable to create session.' });
       }
+
+      res.json({
+        success: true,
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
+      });
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

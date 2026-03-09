@@ -7,6 +7,8 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(
   cors({
@@ -33,6 +35,7 @@ app.use((req, res, next) => {
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
+    proxy: process.env.NODE_ENV === 'production',
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({

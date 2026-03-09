@@ -126,9 +126,9 @@ export default function AustraliaPricingPage() {
                         <AustraliaFeeCalculator />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        <PlanCard {...planData.Formation} onSelect={() => {}} />
-                        <PlanCard {...planData.Compliance} onSelect={() => {}} />
-                        <PlanCard {...planData.AllInOne} onSelect={() => {}} />
+                        <PlanCard {...planData.Formation} onSelect={() => router.push('/checkout?planName=Formation&state=Australia&entityType=PtyLtd&country=Australia&amount=999')} />
+                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/checkout?planName=Compliance&state=Australia&entityType=PtyLtd&country=Australia&amount=2499')} />
+                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/checkout?planName=AllInOne&state=Australia&entityType=PtyLtd&country=Australia&amount=4999')} />
                     </div>
                 </div>
             </section>

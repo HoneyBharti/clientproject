@@ -20,6 +20,8 @@ function CheckoutPageContent() {
     const planName = searchParams.get('planName');
     const state = searchParams.get('state');
     const entityType = searchParams.get('entityType');
+    const country = searchParams.get('country') || 'USA';
+    const amount = searchParams.get('amount');
 
     const planData = {
         'Micro': { title: 'Micro', price: 499 },
@@ -42,7 +44,7 @@ function CheckoutPageContent() {
         'Elite-Wyoming-C-Corp': 'https://buy.stripe.com/dRmdR95QT8DDcBZcyp',
     };
     
-    if (!planName || !state || !entityType || !planData[planName]) {
+    if (!planName || !state || !entityType) {
         return (
              <div className="min-h-screen bg-gray-50 font-inter flex flex-col">
                 <NavHeader onLoginClick={() => router.push('/login')} onSignupClick={() => router.push('/signup')} />
@@ -60,20 +62,18 @@ function CheckoutPageContent() {
         );
     }
     
-    const selectedPlan = planData[planName];
+    const selectedPlan = planData[planName] || { title: planName, price: parseInt(amount) || 0 };
     
-    selectedPlan.features = {
-        'Micro': { list: ['Company Formation (LLC/C-Corp)', 'Registered Agent Service', 'Portal Access & Document Storage'] },
-        'Vitals': { list: ['All Micro Features', 'IRS Business Tax Filings', 'State Annual Report Filing', 'Automated Bookkeeping'] },
-        'Elite': { list: ['All Vitals Features', 'Dedicated Bookkeeper (Human)', 'Priority Legal Support', 'Quarterly Financial Reviews'] }
-    }[planName];
+    selectedPlan.features = selectedPlan.features || {
+        list: ['Company Formation', 'Registered Agent Service', 'Portal Access', 'Document Storage']
+    };
 
     const entityStateKey = `${state} ${entityType}`;
     const stateFeeData = stateFees[entityStateKey] || { initial: 0, annual: 0 };
     
-    const ourFees = selectedPlan.price;
-    const stateFormationFee = stateFeeData.initial;
-    const annualStateFee = stateFeeData.annual;
+    const ourFees = amount ? parseInt(amount) : selectedPlan.price;
+    const stateFormationFee = stateFeeData.initial || 0;
+    const annualStateFee = stateFeeData.annual || 0;
     
     let totalDueToday = ourFees + stateFormationFee;
     if (planName === 'Vitals' || planName === 'Elite') {
@@ -147,9 +147,44 @@ function CheckoutPageContent() {
                                         </>
                                     )}
                                 </div>
-                                 <a href={paymentLink} target="_blank" rel="noopener noreferrer" className="mt-8 block w-full text-center py-3 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-700 transition shadow-lg">
+                                 <button
+                                    onClick={async () => {
+                                        try {
+                                            const response = await fetch('http://localhost:5000/api/payment/create-checkout', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                credentials: 'include',
+                                                body: JSON.stringify({
+                                                    amount: totalDueToday,
+                                                    plan: planName,
+                                                    country: country,
+                                                    state,
+                                                    entityType
+                                                })
+                                            });
+                                            
+                                            if (!response.ok) {
+                                                const error = await response.json();
+                                                console.error('Checkout error:', error);
+                                                alert(error.message || 'Payment error. Please try again.');
+                                                return;
+                                            }
+                                            
+                                            const data = await response.json();
+                                            if (data.url) {
+                                                window.location.href = data.url;
+                                            } else {
+                                                alert('Unable to create checkout session');
+                                            }
+                                        } catch (error) {
+                                            console.error('Payment error:', error);
+                                            alert('Payment error. Please try again.');
+                                        }
+                                    }}
+                                    className="mt-8 block w-full text-center py-3 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-700 transition shadow-lg"
+                                >
                                     Proceed to Payment
-                                 </a>
+                                 </button>
                             </div>
                         </div>
                     </div>

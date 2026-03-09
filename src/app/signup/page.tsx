@@ -1,11 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
-import { useAuth, useFirestore, useUser } from '@/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, collection } from 'firebase/firestore';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -38,17 +36,9 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const auth = useAuth();
-  const firestore = useFirestore();
   const { toast } = useToast();
-  const { user, isUserLoading } = useUser();
+  const { checkAuth } = useAuth();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!isUserLoading && user) {
-      router.push('/dashboard');
-    }
-  }, [user, isUserLoading, router]);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,54 +58,40 @@ export default function SignupPage() {
     }
     
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const newUser = userCredential.user;
-
-      await updateProfile(newUser, { displayName: fullName });
-
-      const userDocRef = doc(firestore, 'users', newUser.uid);
-      await setDoc(userDocRef, {
-        id: newUser.uid,
-        email: newUser.email,
-        fullName: fullName,
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: fullName,
+          email: email,
+          password: password,
+          companyName: companyName
+        })
       });
 
-      const companyId = doc(collection(firestore, 'dummy')).id;
-      const companyDocRef = doc(firestore, `users/${newUser.uid}/companies`, companyId);
-      await setDoc(companyDocRef, {
-        id: companyId,
-        name: companyName,
-        incorporationDate: incorporationDate.toISOString(),
-        userId: newUser.uid,
-        formationState: "Unknown",
-        registeredAgent: "Unknown",
-        ein: "Unknown"
-      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Registration failed');
+      }
+
+      await checkAuth();
 
       toast({
         title: 'Account Created!',
-        description: 'Welcome! You will now be redirected to your portal.',
+        description: 'Please choose a plan to continue.',
       });
 
+      router.push('/usa/pricing');
+
     } catch (error: any) {
-      let friendlyMessage = "An unexpected error occurred. Please try again.";
-      if (error.code === 'auth/email-already-in-use') {
-        friendlyMessage = "This email is already in use. Please log in instead.";
-      } else if (error.code === 'auth/invalid-email') {
-        friendlyMessage = "Please enter a valid email address.";
-      }
-      setError(friendlyMessage);
+      setError(error.message || "An unexpected error occurred. Please try again.");
       setLoading(false);
     }
   };
 
-  if (isUserLoading || user) {
-    return (
-        <div className="flex justify-center items-center min-h-screen bg-gray-50">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-700" />
-        </div>
-    );
-  }
+
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-blue-100 p-4">

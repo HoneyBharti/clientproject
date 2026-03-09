@@ -116,9 +116,9 @@ export default function SaudiPricingPage() {
                         <SaudiFeeCalculator />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        <PlanCard {...planData.Formation} onSelect={() => {}} />
-                        <PlanCard {...planData.Compliance} onSelect={() => {}} />
-                        <PlanCard {...planData.AllInOne} onSelect={() => {}} />
+                        <PlanCard {...planData.Formation} onSelect={() => router.push('/checkout?planName=Formation&state=SaudiArabia&entityType=LLC&country=SaudiArabia&amount=4999')} />
+                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/checkout?planName=Compliance&state=SaudiArabia&entityType=LLC&country=SaudiArabia&amount=7999')} />
+                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/checkout?planName=AllInOne&state=SaudiArabia&entityType=LLC&country=SaudiArabia&amount=12999')} />
                     </div>
                 </div>
             </section>

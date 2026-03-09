@@ -9,10 +9,7 @@ import {
     ShoppingCart, Calculator, MapPin, ChevronLeft, Award, RefreshCw, Key, ShieldCheck, TrendingDown, Clock3, ListChecks,
     ChevronDown, CreditCard as CardIcon, Plus, FileCheck, Landmark, Loader2, SendHorizontal, MailQuestion, Phone, Video, HelpCircle, UserCog, Lock, ToggleLeft, ToggleRight, Search, Sun, Moon, ArrowRight, BookUser, Banknote
 } from 'lucide-react';
-import { useUser, useAuth, useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
-import { doc, getDoc, setDoc, collection, writeBatch, getDocs, deleteDoc } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { CompanyDocuments } from '@/components/company-documents';
+import { useAuth } from '@/contexts/AuthContext';
 import { useFormStatus } from 'react-dom';
 import { askQuestion, type ChatState } from '@/app/actions';
 import { cn } from '@/lib/utils';
@@ -270,20 +267,8 @@ const EnhancedChatbot = () => {
 };
 
 const DashboardContent = ({ user, navigate, isQuickBooksLinked }) => {
-    const firestore = useFirestore();
-    const companiesQuery = useMemoFirebase(
-      () => {
-        if (!firestore || !user?.uid) return null;
-        return collection(firestore, `users/${user.uid}/companies`);
-      },
-      [firestore, user?.uid]
-    );
-
-    const { data: companies, isLoading: isCompanyLoading } = useCollection(companiesQuery);
-    const companyData = companies?.[0]; // Assuming one company per user for now.
-    
-    const welcomeName = user?.displayName || user?.email || 'Valued Client';
-    const companyName = !isCompanyLoading && companyData ? companyData.name : 'Your Company';
+    const welcomeName = user?.name || user?.email || 'Valued Client';
+    const companyName = user?.companyName || 'Your Company';
 
 
     return (
@@ -518,17 +503,14 @@ const Timeline = ({ title, steps }) => (
 );
 
 const CompanySection = ({ userId }) => {
-    const firestore = useFirestore();
-    const companiesQuery = useMemoFirebase(
-      () => {
-        if (!firestore || !userId) return null;
-        return collection(firestore, `users/${userId}/companies`);
-      },
-      [firestore, userId]
-    );
-
-    const { data: companies, isLoading } = useCollection(companiesQuery);
-    const company = companies?.[0]; // Assuming one company per user for now
+    const company = {
+        name: 'ACME Innovations LLC',
+        formationState: 'Wyoming',
+        registeredAgent: 'YourLegal RA Services Inc.',
+        ein: '88-1234567',
+        incorporationDate: new Date().toISOString()
+    };
+    const isLoading = false;
 
     const formationSteps = [
         { label: 'Name Check', status: 'completed', date: 'Aug 10, 2024', details: 'ACME Innovations LLC Available' },
@@ -851,12 +833,17 @@ const ChartOfAccounts = ({ isQuickBooksLinked, userId }) => {
         if (!isQuickBooksLinked || !userId) return;
         setIsLoading(true);
         try {
-            const response = await axios.post(`/api/quickbooks`, {
-                userId,
-                method: 'GET',
-                url: `query?query=select * from Account`
+            const response = await fetch('http://localhost:5000/api/quickbooks/proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    method: 'GET',
+                    url: 'query?query=select * from Account'
+                })
             });
-            setAccounts(response.data?.QueryResponse?.Account || []);
+            const data = await response.json();
+            setAccounts(data?.QueryResponse?.Account || []);
         } catch (error) {
             console.error("Error fetching accounts:", error);
             toast({ variant: 'destructive', title: 'Failed to fetch accounts.' });
@@ -881,24 +868,28 @@ const ChartOfAccounts = ({ isQuickBooksLinked, userId }) => {
         };
 
         try {
-             await axios.post('/api/quickbooks', {
-                userId,
+            const response = await fetch('http://localhost:5000/api/quickbooks/proxy', {
                 method: 'POST',
-                url: 'account',
-                data: newAccountPayload
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    method: 'POST',
+                    url: 'account',
+                    data: newAccountPayload
+                })
             });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message);
+            
             toast({ title: 'Account Created', description: `${newAccountName} has been added to QuickBooks.` });
             
-            // Refresh accounts list
             fetchAccounts();
-
-            // Reset form and close dialog
             setIsDialogOpen(false);
             setNewAccountName('');
             setNewAccountType('Expense');
         } catch (error) {
             console.error("Error creating account:", error);
-            toast({ variant: 'destructive', title: 'Failed to create account.', description: error.response?.data?.error?.Fault?.Error[0]?.Detail || 'An unknown error occurred.' });
+            toast({ variant: 'destructive', title: 'Failed to create account.' });
         }
     };
 
@@ -1083,7 +1074,7 @@ const ARAPSection = ({ isQuickBooksLinked }) => (
     </div>
 );
 
-const BookkeepingSection = ({ activePath, isQuickBooksLinked, userId }) => {
+const BookkeepingSection = ({ activePath, isQuickBooksLinked, userId, onQuickBooksConnect }) => {
     const [bills, setBills] = useState([]);
     const [invoices, setInvoices] = useState([]);
     const [pnlData, setPnlData] = useState(null);
@@ -1096,30 +1087,44 @@ const BookkeepingSection = ({ activePath, isQuickBooksLinked, userId }) => {
                 setIsLoading(true);
                 setError(null);
                 try {
-                    // Fetch bills, invoices, and reports in parallel
                     const [billsRes, invoicesRes, pnlRes] = await Promise.all([
-                        axios.post(`/api/quickbooks`, { userId, method: 'GET', url: `query?query=select * from Bill` }),
-                        axios.post(`/api/quickbooks`, { userId, method: 'GET', url: `query?query=select * from Invoice` }),
-                        axios.post(`/api/quickbooks`, { userId, method: 'GET', url: `reports/ProfitAndLoss` }),
+                        fetch('http://localhost:5000/api/quickbooks/proxy', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ method: 'GET', url: 'query?query=select * from Bill' })
+                        }),
+                        fetch('http://localhost:5000/api/quickbooks/proxy', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ method: 'GET', url: 'query?query=select * from Invoice' })
+                        }),
+                        fetch('http://localhost:5000/api/quickbooks/proxy', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ method: 'GET', url: 'reports/ProfitAndLoss' })
+                        })
                     ]);
 
-                    setBills(billsRes.data?.QueryResponse?.Bill || []);
-                    setInvoices(invoicesRes.data?.QueryResponse?.Invoice || []);
-                    setPnlData(pnlRes.data || null);
+                    const billsData = await billsRes.json();
+                    const invoicesData = await invoicesRes.json();
+                    const pnlData = await pnlRes.json();
+
+                    setBills(billsData?.QueryResponse?.Bill || []);
+                    setInvoices(invoicesData?.QueryResponse?.Invoice || []);
+                    setPnlData(pnlData || null);
 
                 } catch (e: any) {
                     setError('Failed to fetch data from QuickBooks.');
                     console.error(e);
-                    if (e.response) {
-                        console.error("QB Error Response:", e.response.data);
-                    }
                 } finally {
                     setIsLoading(false);
                 }
             };
             loadData();
         } else {
-            // Reset data if not linked or no user
             setBills([]);
             setInvoices([]);
             setPnlData(null);
@@ -1182,7 +1187,7 @@ const BookkeepingSection = ({ activePath, isQuickBooksLinked, userId }) => {
                         <Image src="/quickbooks-logo.svg" alt="QuickBooks" width={120} height={24} className="mx-auto mb-4"/>
                         <h3 className="text-lg font-semibold">Connect to QuickBooks</h3>
                         <p className="text-gray-500 mb-4">Link your account to see live bookkeeping data.</p>
-                        <Button onClick={() => window.location.href = `/quickbooksAuth?userId=${userId}`}>Connect Now</Button>
+                        <Button onClick={() => onQuickBooksConnect?.()}>Connect Now</Button>
                     </div>
                 )}
                 {isQuickBooksLinked && content}
@@ -1216,27 +1221,8 @@ const BankingSection = () => (
 );
 
 const ComplianceSection = ({ userId }) => {
-    const firestore = useFirestore();
-    const companiesQuery = useMemoFirebase(
-      () => {
-        if (!firestore || !userId) return null;
-        return collection(firestore, `users/${userId}/companies`);
-      },
-      [firestore, userId]
-    );
-
-    const { data: companies } = useCollection(companiesQuery);
-    const companyId = companies?.[0]?.id;
-
-    const complianceDatesQuery = useMemoFirebase(
-      () => {
-        if (!firestore || !userId || !companyId) return null;
-        return collection(firestore, `users/${userId}/companies/${companyId}/complianceDates`);
-      },
-      [firestore, userId, companyId]
-    );
-
-    const { data: complianceItems, isLoading } = useCollection(complianceDatesQuery);
+    const complianceItems = initialComplianceItems;
+    const isLoading = false;
     
     return (
         <SectionWrapper title="Annual Compliance Dates">
@@ -1309,6 +1295,8 @@ const TaxesSection = () => (
         </div>
     </SectionWrapper>
 );
+
+import { CompanyDocuments } from '@/components/company-documents';
 
 const DocumentsSection = () => (
     <SectionWrapper title="My Documents">
@@ -1387,16 +1375,16 @@ const SupportSection = ({ navigate }) => {
 
 const SettingsSection = ({ onLogout, userId, user, isQuickBooksLinked, onQuickBooksConnect, onQuickBooksDisconnect }) => {
   const [profile, setProfile] = useState({
-    firstName: user?.displayName?.split(' ')[0] || '',
-    lastName: user?.displayName?.split(' ').slice(1).join(' ') || '',
-    email: user?.email || 'john.doe@example.com'
+    firstName: user?.name?.split(' ')[0] || '',
+    lastName: user?.name?.split(' ').slice(1).join(' ') || '',
+    email: user?.email || ''
   });
 
   useEffect(() => {
     if (user) {
         setProfile({
-            firstName: user.displayName?.split(' ')[0] || '',
-            lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+            firstName: user.name?.split(' ')[0] || '',
+            lastName: user.name?.split(' ').slice(1).join(' ') || '',
             email: user.email || ''
         });
     }
@@ -1509,38 +1497,70 @@ const initialComplianceItems = [
 
 
 export default function PortalPage({ onLogout }) {
-    const { user } = useUser();
-    const firestore = useFirestore();
+    const { user } = useAuth();
     const [activePath, setActivePath] = useState('dashboard');
     const { toast } = useToast();
     
-    const quickBooksConnectionQuery = useMemoFirebase(() => {
-        if (!user || !firestore) return null;
-        return doc(firestore, `users/${user.uid}/connections/quickbooks`);
-    }, [user, firestore]);
+    const [isQuickBooksLinked, setIsQuickBooksLinked] = useState(false);
 
-    const { data: qbConnection, isLoading: isQbLoading } = useDoc(quickBooksConnectionQuery);
-    
-    const isQuickBooksLinked = qbConnection?.status === 'active';
-
-    const handleQuickBooksConnect = () => {
+    useEffect(() => {
+        const checkConnection = async () => {
+            try {
+                const response = await fetch('http://localhost:5000/api/quickbooks/status', {
+                    credentials: 'include',
+                });
+                const data = await response.json();
+                setIsQuickBooksLinked(data.connected || false);
+            } catch (error) {
+                setIsQuickBooksLinked(false);
+            }
+        };
         if (user) {
-            // Redirect to the Firebase Function that starts the OAuth flow.
-            window.location.href = `/quickbooksAuth?userId=${user.uid}`;
+            checkConnection();
+        }
+    }, [user]);
+
+    const handleQuickBooksConnect = async () => {
+        if (user) {
+            try {
+                const response = await fetch('http://localhost:5000/api/quickbooks/auth-url', {
+                    credentials: 'include',
+                });
+                const data = await response.json();
+                if (data.authUrl) {
+                    window.location.href = data.authUrl;
+                }
+            } catch (error) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Connection Failed',
+                    description: 'Unable to connect to QuickBooks',
+                });
+            }
         }
     };
 
     const handleQuickBooksDisconnect = async () => {
-        if (user) {
-            const qbDocRef = doc(firestore, `users/${user.uid}/connections/quickbooks`);
-            // In a real app, you would also call a backend function to revoke the OAuth tokens.
-            await deleteDoc(qbDocRef);
+        try {
+            await fetch('http://localhost:5000/api/quickbooks/disconnect', {
+                method: 'POST',
+                credentials: 'include',
+            });
+            setIsQuickBooksLinked(false);
+            toast({
+                title: 'Disconnected',
+                description: 'QuickBooks has been disconnected',
+            });
+        } catch (error) {
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: 'Failed to disconnect QuickBooks',
+            });
         }
     };
 
     useEffect(() => {
-        // This effect runs on the client after the component mounts.
-        // It checks the URL for query parameters from the OAuth redirect.
         if (typeof window !== 'undefined') {
             const params = new URLSearchParams(window.location.search);
             const qbStatus = params.get('qb_status');
@@ -1551,68 +1571,25 @@ export default function PortalPage({ onLogout }) {
             }
 
             if (qbStatus === 'success') {
+                setIsQuickBooksLinked(true);
                 toast({
                     title: 'QuickBooks Connected!',
                     description: 'Your QuickBooks account has been successfully linked.',
                 });
-                // Clean up URL to avoid re-triggering
                 window.history.replaceState(null, '', window.location.pathname);
             } else if (qbStatus === 'error') {
-                 toast({
+                toast({
                     variant: 'destructive',
                     title: 'QuickBooks Connection Failed',
                     description: 'Something went wrong. Please try connecting again.',
                 });
-                // Clean up URL
                 window.history.replaceState(null, '', window.location.pathname);
             }
         }
     }, [toast]);
 
 
-    useEffect(() => {
-        const ensureMockDataExists = async () => {
-            if (user && firestore) {
-                
-                const companiesCollectionRef = collection(firestore, `users/${user.uid}/companies`);
-                const companiesSnap = await getDocs(companiesCollectionRef);
-                
-                let companyId;
-                if (companiesSnap.empty) {
-                     const companyRef = doc(collection(firestore, `users/${user.uid}/companies`));
-                     await setDoc(companyRef, {
-                        name: "ACME Innovations LLC",
-                        formationState: "Wyoming",
-                        registeredAgent: "YourLegal RA Services Inc.",
-                        ein: "88-1234567",
-                        userId: user.uid,
-                        id: companyRef.id,
-                        incorporationDate: new Date().toISOString()
-                    });
-                    companyId = companyRef.id;
-                } else {
-                    companyId = companiesSnap.docs[0].id;
-                }
-                
 
-                if (companyId) {
-                    const complianceColRef = collection(firestore, `users/${user.uid}/companies/${companyId}/complianceDates`);
-                    const complianceSnap = await getDocs(complianceColRef);
-
-                    if (complianceSnap.empty) {
-                        const batch = writeBatch(firestore);
-                        initialComplianceItems.forEach(item => {
-                            const docRef = doc(complianceColRef, item.id);
-                            batch.set(docRef, { ...item, companyId: companyId });
-                        });
-                        await batch.commit();
-                    }
-                }
-            }
-        };
-
-        ensureMockDataExists();
-    }, [user, firestore]);
 
     const handleNavigation = (path) => setActivePath(path);
 
@@ -1671,7 +1648,14 @@ export default function PortalPage({ onLogout }) {
     
     const renderSection = () => {
         if (activePath.startsWith('bookkeeping')) {
-            return <BookkeepingSection activePath={activePath} isQuickBooksLinked={isQuickBooksLinked} userId={user?.uid} />;
+            return (
+              <BookkeepingSection
+                activePath={activePath}
+                isQuickBooksLinked={isQuickBooksLinked}
+                userId={user?.uid}
+                onQuickBooksConnect={handleQuickBooksConnect}
+              />
+            );
         }
 
         switch (activePath) {

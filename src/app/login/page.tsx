@@ -1,10 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
-import { useAuth, useUser } from '@/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -19,46 +18,46 @@ import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { API_BASE_URL } from '@/lib/api-base';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const auth = useAuth();
-  const { user, isUserLoading } = useUser();
+  const { login } = useAuth();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!isUserLoading && user) {
-      router.push('/dashboard');
-    }
-  }, [user, isUserLoading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // Let the useEffect handle the navigation
-    } catch (error: any) {
-      let friendlyMessage = "An unexpected error occurred. Please try again.";
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        friendlyMessage = "Invalid email or password. Please try again.";
+      await login(email, password);
+      
+      // Check user role and redirect accordingly
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user.role === 'admin') {
+          router.push('/admin');
+        } else {
+          // Always redirect regular users to dashboard
+          router.push('/dashboard');
+        }
+      } else {
+        router.push('/dashboard');
       }
-      setError(friendlyMessage);
+    } catch (error: any) {
+      setError(error.message || "Invalid email or password. Please try again.");
       setLoading(false);
     }
   };
 
-  if (isUserLoading || user) {
-    return (
-        <div className="flex justify-center items-center min-h-screen bg-gray-50">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-700" />
-        </div>
-    );
-  }
+
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-blue-100 p-4">

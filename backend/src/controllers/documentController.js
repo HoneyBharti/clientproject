@@ -33,13 +33,14 @@ const toDocumentResponse = (doc, req) => {
     uploadedAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     reviewedAt: doc.reviewedAt,
+    taxFilingId: doc.taxFiling || null,
     downloadUrl: `${baseUrl}/api/documents/${doc._id}/download`,
   };
 };
 
 const validateObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 
-const createDocument = async ({ userId, source, status, fileName, mimeType, buffer, uploadedBy }) =>
+const createDocument = async ({ userId, source, status, fileName, mimeType, buffer, uploadedBy, taxFilingId }) =>
   Document.create({
     user: userId,
     originalName: fileName,
@@ -49,6 +50,7 @@ const createDocument = async ({ userId, source, status, fileName, mimeType, buff
     status,
     data: buffer,
     uploadedBy,
+    taxFiling: taxFilingId || null,
   });
 
 exports.getMyDocuments = async (req, res) => {

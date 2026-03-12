@@ -255,7 +255,7 @@ const PricingSection = () => {
     }, []);
 
     const handleSelectPlan = (planName) => {
-        router.push(`/checkout?planName=${planName}&state=${selectedState}&entityType=${selectedEntityType}`);
+        router.push(`/onboarding?planName=${planName}&state=${selectedState}&entityType=${selectedEntityType}&country=USA`);
     };
 
     const planData = {

@@ -133,9 +133,9 @@ export default function SingaporePricingPage() {
                         <SingaporeFeeCalculator />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        <PlanCard {...planData.Formation} onSelect={() => router.push('/checkout?planName=Formation&state=Singapore&entityType=PteLtd&country=Singapore&amount=999')} />
-                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/checkout?planName=Compliance&state=Singapore&entityType=PteLtd&country=Singapore&amount=1999')} />
-                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/checkout?planName=AllInOne&state=Singapore&entityType=PteLtd&country=Singapore&amount=3499')} />
+                        <PlanCard {...planData.Formation} onSelect={() => router.push('/onboarding?planName=Formation&state=Singapore&entityType=PteLtd&country=Singapore&amount=999')} />
+                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/onboarding?planName=Compliance&state=Singapore&entityType=PteLtd&country=Singapore&amount=1999')} />
+                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/onboarding?planName=AllInOne&state=Singapore&entityType=PteLtd&country=Singapore&amount=3499')} />
                     </div>
                 </div>
             </section>

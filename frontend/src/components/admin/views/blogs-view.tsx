@@ -113,16 +113,15 @@ const toFormState = (blog: BlogRecord): BlogFormState => ({
 });
 
 export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
-  const { contentQueue, contentQ, setContentQ, d } = ctx;
-
-  const [blogs, setBlogs] = useState<BlogRecord[]>(() => buildInitialBlogs(contentQueue));
+  const { contentQ, setContentQ, d, blogs, createBlog, updateBlog, deleteBlog } = ctx;
+  const blogRecords: BlogRecord[] = blogs || [];
   const [statusFilter, setStatusFilter] = useState<"all" | BlogStatus>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<BlogFormState>(createEmptyForm);
   const [imageInputKey, setImageInputKey] = useState(0);
   const [formMessage, setFormMessage] = useState("");
   const [viewBlog, setViewBlog] = useState<BlogRecord | null>(null);
-  const [deleteBlog, setDeleteBlog] = useState<BlogRecord | null>(null);
+  const [blogToDelete, setBlogToDelete] = useState<BlogRecord | null>(null);
 
   const editorRef = useRef<HTMLDivElement | null>(null);
 
@@ -134,7 +133,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
 
   const filteredBlogs = useMemo(
     () =>
-      blogs.filter((blog) => {
+      blogRecords.filter((blog) => {
         const matchesQuery = [blog.title, blog.slug, blog.author, blog.category, blog.tags.join(" ")]
           .join(" ")
           .toLowerCase()
@@ -142,16 +141,16 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
         const matchesStatus = statusFilter === "all" || blog.status === statusFilter;
         return matchesQuery && matchesStatus;
       }),
-    [blogs, contentQ, statusFilter]
+    [blogRecords, contentQ, statusFilter]
   );
 
   const blogMetrics = useMemo(
     () => ({
-      total: blogs.length,
-      published: blogs.filter((blog) => blog.status === "published").length,
-      drafts: blogs.filter((blog) => blog.status === "draft").length,
+      total: blogRecords.length,
+      published: blogRecords.filter((blog) => blog.status === "published").length,
+      drafts: blogRecords.filter((blog) => blog.status === "draft").length,
     }),
-    [blogs]
+    [blogRecords]
   );
 
   const resetForm = () => {
@@ -192,32 +191,38 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
     setForm((prev) => ({ ...prev, fullContent: editorRef.current?.innerHTML || prev.fullContent }));
   };
 
-  const handleSaveBlog = () => {
+  const handleSaveBlog = async () => {
     if (!form.title.trim() || !form.shortDescription.trim() || !form.fullContent.trim() || !form.author.trim() || !form.category.trim()) {
       setFormMessage("Complete title, description, content, author, and category before saving.");
       return;
     }
 
-    const normalizedBlog: BlogRecord = {
-      id: editingId ?? `blog_${Date.now()}`,
+    const payload = {
       title: form.title.trim(),
       slug: slugify(form.slug || form.title),
-      image: form.image.trim() || createPlaceholderImage(form.title),
-      shortDescription: form.shortDescription.trim(),
-      fullContent: form.fullContent,
+      featuredImage: form.image.trim() || createPlaceholderImage(form.title),
+      excerpt: form.shortDescription.trim(),
+      content: form.fullContent,
       author: form.author.trim(),
       category: form.category.trim(),
       tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       status: form.status,
-      createdAt: editingId ? blogs.find((blog) => blog.id === editingId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
     };
 
     if (editingId) {
-      setBlogs((prev) => prev.map((blog) => (blog.id === editingId ? normalizedBlog : blog)));
-      setFormMessage(`Blog "${normalizedBlog.title}" updated.`);
+      const result = await updateBlog(editingId, payload);
+      if (!result.success) {
+        setFormMessage(result.error || "Unable to update blog.");
+        return;
+      }
+      setFormMessage(`Blog "${payload.title}" updated.`);
     } else {
-      setBlogs((prev) => [normalizedBlog, ...prev]);
-      setFormMessage(`Blog "${normalizedBlog.title}" created.`);
+      const result = await createBlog(payload);
+      if (!result.success) {
+        setFormMessage(result.error || "Unable to create blog.");
+        return;
+      }
+      setFormMessage(`Blog "${payload.title}" created.`);
     }
 
     setEditingId(null);
@@ -231,14 +236,18 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
     setFormMessage("");
   };
 
-  const handleDeleteBlog = () => {
-    if (!deleteBlog) return;
-    setBlogs((prev) => prev.filter((blog) => blog.id !== deleteBlog.id));
-    if (editingId === deleteBlog.id) {
+  const handleDeleteBlog = async () => {
+    if (!blogToDelete) return;
+    const result = await deleteBlog(blogToDelete.id);
+    if (!result.success) {
+      setFormMessage(result.error || "Unable to delete blog.");
+      return;
+    }
+    if (editingId === blogToDelete.id) {
       resetForm();
     }
-    setFormMessage(`Blog "${deleteBlog.title}" deleted.`);
-    setDeleteBlog(null);
+    setFormMessage(`Blog "${blogToDelete.title}" deleted.`);
+    setBlogToDelete(null);
   };
 
   return (
@@ -456,7 +465,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                               <Eye className="mr-1 sm:mr-2 h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               <span className="text-xs">View</span>
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={() => setDeleteBlog(blog)} className="h-8 px-2 sm:px-3">
+                            <Button size="sm" variant="destructive" onClick={() => setBlogToDelete(blog)} className="h-8 px-2 sm:px-3">
                               <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               <span className="text-xs">Delete</span>
                             </Button>
@@ -506,18 +515,18 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteBlog} onOpenChange={(open) => { if (!open) setDeleteBlog(null); }}>
+      <Dialog open={!!blogToDelete} onOpenChange={(open) => { if (!open) setBlogToDelete(null); }}>
         <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
-          {deleteBlog ? (
+          {blogToDelete ? (
             <>
               <DialogHeader>
                 <DialogTitle>Delete Blog</DialogTitle>
                 <DialogDescription>
-                  This will permanently remove "{deleteBlog.title}" from the admin blog dashboard.
+                  This will permanently remove "{blogToDelete.title}" from the admin blog dashboard.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <Button variant="outline" onClick={() => setDeleteBlog(null)}>Cancel</Button>
+                <Button variant="outline" onClick={() => setBlogToDelete(null)}>Cancel</Button>
                 <Button variant="destructive" onClick={handleDeleteBlog}>Confirm Delete</Button>
               </div>
             </>

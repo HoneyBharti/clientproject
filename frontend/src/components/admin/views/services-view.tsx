@@ -74,6 +74,51 @@ const statusClass: Record<ServiceStatus, string> = {
 const coreCategories = ["Formation", "Finance", "Tax", "Compliance"];
 const addOnCategories = ["IP Protection", "Compliance", "Tax Strategy", "Expansion"];
 
+const coreCategoryToBackend: Record<string, string> = {
+  Formation: "formation",
+  Finance: "accounting",
+  Tax: "tax-compliance",
+  Compliance: "annual-compliance",
+};
+
+const addOnCategoryToBackend: Record<string, string> = {
+  "IP Protection": "audit-support",
+  Compliance: "bookkeeping",
+  "Tax Strategy": "virtual-cfo",
+  Expansion: "payroll",
+};
+
+const backendToCoreCategory: Record<string, string> = {
+  formation: "Formation",
+  accounting: "Finance",
+  "tax-compliance": "Tax",
+  "annual-compliance": "Compliance",
+};
+
+const backendToAddOnCategory: Record<string, string> = {
+  "audit-support": "IP Protection",
+  bookkeeping: "Compliance",
+  "virtual-cfo": "Tax Strategy",
+  payroll: "Expansion",
+};
+
+const inferUiType = (service: any): "core" | "addon" => {
+  if (service?.uiType === "core" || service?.uiType === "addon") {
+    return service.uiType;
+  }
+  return backendToCoreCategory[service?.category] ? "core" : "addon";
+};
+
+const resolveUiCategory = (service: any, uiType: "core" | "addon") => {
+  if (service?.uiCategory) return service.uiCategory;
+  return uiType === "core"
+    ? backendToCoreCategory[service?.category] || "Formation"
+    : backendToAddOnCategory[service?.category] || "IP Protection";
+};
+
+const resolvePrice = (pricing: any) =>
+  Number(pricing?.starter ?? pricing?.growth ?? pricing?.scale ?? 0);
+
 const emptyCoreForm = (): CoreFormState => ({
   serviceName: "",
   slug: "",
@@ -222,11 +267,9 @@ const initialAddOnServices: AddOnService[] = [
 ];
 
 export function ServicesView({ ctx }: { ctx: AdminViewContext }) {
-  void ctx;
+  const { services, createService, updateService, deleteService } = ctx;
   const [activeTab, setActiveTab] = useState<"core" | "addon">("core");
   const [search, setSearch] = useState("");
-  const [coreServices, setCoreServices] = useState<CoreService[]>(initialCoreServices);
-  const [addOnServices, setAddOnServices] = useState<AddOnService[]>(initialAddOnServices);
   const [coreEditingId, setCoreEditingId] = useState<string | null>(null);
   const [addOnEditingId, setAddOnEditingId] = useState<string | null>(null);
   const [coreSlugDirty, setCoreSlugDirty] = useState(false);
@@ -234,6 +277,47 @@ export function ServicesView({ ctx }: { ctx: AdminViewContext }) {
   const [addOnForm, setAddOnForm] = useState<AddOnFormState>(emptyAddOnForm);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [message, setMessage] = useState("");
+
+  const normalizedServices = useMemo(() => (Array.isArray(services) ? services : []), [services]);
+
+  const { coreServices, addOnServices } = useMemo(() => {
+    const cores: CoreService[] = [];
+    const addons: AddOnService[] = [];
+
+    normalizedServices.forEach((service: any) => {
+      const uiType = inferUiType(service);
+      const uiCategory = resolveUiCategory(service, uiType);
+      const price = resolvePrice(service.pricing);
+
+      if (uiType === "core") {
+        cores.push({
+          id: String(service._id || service.id),
+          serviceName: service.name,
+          slug: service.slug,
+          description: service.description,
+          features: Array.isArray(service.features) ? service.features : [],
+          price,
+          category: uiCategory,
+          icon: service.icon || placeholderIcon(service.name || "Service"),
+          status: service.isActive ? "active" : "inactive",
+          createdAt: service.createdAt || new Date().toISOString(),
+        });
+      } else {
+        addons.push({
+          id: String(service._id || service.id),
+          name: service.name,
+          category: uiCategory,
+          description: service.description,
+          price,
+          icon: service.icon || placeholderIcon(service.name || "Service"),
+          status: service.isActive ? "active" : "inactive",
+          createdAt: service.createdAt || new Date().toISOString(),
+        });
+      }
+    });
+
+    return { coreServices: cores, addOnServices: addons };
+  }, [normalizedServices]);
 
   const filteredCoreServices = useMemo(
     () =>
@@ -265,7 +349,7 @@ export function ServicesView({ ctx }: { ctx: AdminViewContext }) {
     setAddOnForm(emptyAddOnForm());
   };
 
-  const saveCoreService = () => {
+  const saveCoreService = async () => {
     if (!coreForm.serviceName.trim() || !coreForm.description.trim() || !coreForm.price.trim()) {
       setMessage("Complete service name, description, and price before saving the core service.");
       return;
@@ -276,33 +360,34 @@ export function ServicesView({ ctx }: { ctx: AdminViewContext }) {
       return;
     }
 
-    const nextRecord: CoreService = {
-      id: coreEditingId ?? `core_${Date.now()}`,
-      serviceName: coreForm.serviceName.trim(),
+    const price = Number(coreForm.price);
+    const payload = {
+      name: coreForm.serviceName.trim(),
       slug: slugify(coreForm.slug || coreForm.serviceName),
       description: coreForm.description.trim(),
       features: coreForm.features.split(",").map((feature) => feature.trim()).filter(Boolean),
-      price: Number(coreForm.price),
-      category: coreForm.category,
+      pricing: { starter: price, growth: price, scale: price },
+      category: coreCategoryToBackend[coreForm.category] || "formation",
+      isActive: coreForm.status === "active",
+      uiType: "core",
+      uiCategory: coreForm.category,
       icon: coreForm.icon.trim() || placeholderIcon(coreForm.serviceName),
-      status: coreForm.status,
-      createdAt: coreEditingId
-        ? coreServices.find((service) => service.id === coreEditingId)?.createdAt || new Date().toISOString()
-        : new Date().toISOString(),
     };
 
-    if (coreEditingId) {
-      setCoreServices((prev) => prev.map((service) => (service.id === coreEditingId ? nextRecord : service)));
-      setMessage(`Core service "${nextRecord.serviceName}" updated.`);
-    } else {
-      setCoreServices((prev) => [nextRecord, ...prev]);
-      setMessage(`Core service "${nextRecord.serviceName}" created.`);
+    const result = coreEditingId
+      ? await updateService(coreEditingId, payload)
+      : await createService(payload);
+
+    if (!result.success) {
+      setMessage(result.error || "Unable to save core service.");
+      return;
     }
 
+    setMessage(`Core service "${payload.name}" ${coreEditingId ? "updated" : "created"}.`);
     resetCoreForm();
   };
 
-  const saveAddOnService = () => {
+  const saveAddOnService = async () => {
     if (!addOnForm.name.trim() || !addOnForm.description.trim() || !addOnForm.price.trim()) {
       setMessage("Complete name, description, and price before saving the add-on service.");
       return;
@@ -313,27 +398,30 @@ export function ServicesView({ ctx }: { ctx: AdminViewContext }) {
       return;
     }
 
-    const nextRecord: AddOnService = {
-      id: addOnEditingId ?? `addon_${Date.now()}`,
+    const price = Number(addOnForm.price);
+    const payload = {
       name: addOnForm.name.trim(),
-      category: addOnForm.category,
+      slug: slugify(addOnForm.name),
       description: addOnForm.description.trim(),
-      price: Number(addOnForm.price),
+      features: [],
+      pricing: { starter: price, growth: price, scale: price },
+      category: addOnCategoryToBackend[addOnForm.category] || "audit-support",
+      isActive: addOnForm.status === "active",
+      uiType: "addon",
+      uiCategory: addOnForm.category,
       icon: addOnForm.icon.trim() || placeholderIcon(addOnForm.name),
-      status: addOnForm.status,
-      createdAt: addOnEditingId
-        ? addOnServices.find((service) => service.id === addOnEditingId)?.createdAt || new Date().toISOString()
-        : new Date().toISOString(),
     };
 
-    if (addOnEditingId) {
-      setAddOnServices((prev) => prev.map((service) => (service.id === addOnEditingId ? nextRecord : service)));
-      setMessage(`Add-on service "${nextRecord.name}" updated.`);
-    } else {
-      setAddOnServices((prev) => [nextRecord, ...prev]);
-      setMessage(`Add-on service "${nextRecord.name}" created.`);
+    const result = addOnEditingId
+      ? await updateService(addOnEditingId, payload)
+      : await createService(payload);
+
+    if (!result.success) {
+      setMessage(result.error || "Unable to save add-on service.");
+      return;
     }
 
+    setMessage(`Add-on service "${payload.name}" ${addOnEditingId ? "updated" : "created"}.`);
     resetAddOnForm();
   };
 
@@ -368,35 +456,45 @@ export function ServicesView({ ctx }: { ctx: AdminViewContext }) {
     setMessage("");
   };
 
-  const toggleCoreServiceStatus = (serviceId: string, enabled: boolean) => {
-    setCoreServices((prev) =>
-      prev.map((service) => (service.id === serviceId ? { ...service, status: enabled ? "active" : "inactive" } : service))
-    );
+  const toggleCoreServiceStatus = async (serviceId: string, enabled: boolean) => {
     const target = coreServices.find((service) => service.id === serviceId);
-    if (target) {
-      setMessage(`Core service "${target.serviceName}" ${enabled ? "enabled" : "disabled"}.`);
+    if (!target) return;
+    const result = await updateService(serviceId, { isActive: enabled });
+    if (!result.success) {
+      setMessage(result.error || "Unable to update service status.");
+      return;
     }
+    setMessage(`Core service "${target.serviceName}" ${enabled ? "enabled" : "disabled"}.`);
   };
 
-  const toggleAddOnServiceStatus = (serviceId: string, enabled: boolean) => {
-    setAddOnServices((prev) =>
-      prev.map((service) => (service.id === serviceId ? { ...service, status: enabled ? "active" : "inactive" } : service))
-    );
+  const toggleAddOnServiceStatus = async (serviceId: string, enabled: boolean) => {
     const target = addOnServices.find((service) => service.id === serviceId);
-    if (target) {
-      setMessage(`Add-on service "${target.name}" ${enabled ? "enabled" : "disabled"}.`);
+    if (!target) return;
+    const result = await updateService(serviceId, { isActive: enabled });
+    if (!result.success) {
+      setMessage(result.error || "Unable to update service status.");
+      return;
     }
+    setMessage(`Add-on service "${target.name}" ${enabled ? "enabled" : "disabled"}.`);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
 
     if (deleteTarget.type === "core") {
-      setCoreServices((prev) => prev.filter((service) => service.id !== deleteTarget.record.id));
+      const result = await deleteService(deleteTarget.record.id);
+      if (!result.success) {
+        setMessage(result.error || "Unable to delete core service.");
+        return;
+      }
       if (coreEditingId === deleteTarget.record.id) resetCoreForm();
       setMessage(`Core service "${deleteTarget.record.serviceName}" deleted.`);
     } else {
-      setAddOnServices((prev) => prev.filter((service) => service.id !== deleteTarget.record.id));
+      const result = await deleteService(deleteTarget.record.id);
+      if (!result.success) {
+        setMessage(result.error || "Unable to delete add-on service.");
+        return;
+      }
       if (addOnEditingId === deleteTarget.record.id) resetAddOnForm();
       setMessage(`Add-on service "${deleteTarget.record.name}" deleted.`);
     }

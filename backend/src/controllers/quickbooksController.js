@@ -18,19 +18,20 @@ const makeApiCall = async (accessToken, realmId, url, method = 'GET', body = nul
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json',
-      'Content-Type': 'application/json',
     },
   };
 
   if (body && method !== 'GET') {
+    options.headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
 
   const response = await fetch(`${baseUrl}/v3/company/${realmId}/${url}`, options);
-  return response.json();
+  const data = await response.json().catch(() => null);
+  return { status: response.status, data };
 };
 
-const refreshTokenIfNeeded = async (user) => {
+const refreshTokenIfNeeded = async (user, force = false) => {
   if (!user.quickBooksTokens || !user.quickBooksTokens.expiresAt) {
     return user;
   }
@@ -38,7 +39,7 @@ const refreshTokenIfNeeded = async (user) => {
   const expiresAt = new Date(user.quickBooksTokens.expiresAt);
   const now = new Date();
   
-  if (expiresAt > now) {
+  if (!force && expiresAt > now) {
     return user;
   }
 
@@ -60,8 +61,71 @@ const refreshTokenIfNeeded = async (user) => {
     return user;
   } catch (error) {
     console.error('Token refresh error:', error);
+    const errorText = [
+      error?.oauth_error,
+      error?.error,
+      error?.body?.error,
+      error?.body?.error_description,
+      error?.message
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    const isInvalidRefresh =
+      errorText.includes('refresh') && (errorText.includes('invalid') || errorText.includes('expired') || errorText.includes('grant'));
+
+    if (isInvalidRefresh) {
+      user.quickBooksConnected = false;
+      user.quickBooksTokens = {};
+      await user.save();
+      const authError = new Error('QuickBooks authorization expired. Please reconnect.');
+      authError.status = 401;
+      authError.code = 'QB_REFRESH_INVALID';
+      throw authError;
+    }
+
     throw error;
   }
+};
+
+const callQuickBooks = async (user, { method = 'GET', url, data }) => {
+  let refreshedUser;
+  try {
+    refreshedUser = await refreshTokenIfNeeded(user);
+  } catch (error) {
+    if (error?.code === 'QB_REFRESH_INVALID' || error?.status === 401) {
+      return { result: { status: 401, data: { message: error.message } }, user };
+    }
+    throw error;
+  }
+  let result = await makeApiCall(
+    refreshedUser.quickBooksTokens.accessToken,
+    refreshedUser.quickBooksTokens.realmId,
+    url,
+    method,
+    data
+  );
+
+  if (result.status === 401) {
+    try {
+      refreshedUser = await refreshTokenIfNeeded(refreshedUser, true);
+      result = await makeApiCall(
+        refreshedUser.quickBooksTokens.accessToken,
+        refreshedUser.quickBooksTokens.realmId,
+        url,
+        method,
+        data
+      );
+    } catch (error) {
+      if (error?.code === 'QB_REFRESH_INVALID' || error?.status === 401) {
+        return { result: { status: 401, data: { message: error.message } }, user: refreshedUser };
+      }
+      throw error;
+    }
+  }
+
+  return { result, user: refreshedUser };
 };
 
 exports.getAuthUrl = (req, res) => {
@@ -137,14 +201,16 @@ exports.getCompanyInfo = async (req, res) => {
       return res.status(400).json({ message: 'QuickBooks not connected' });
     }
 
-    user = await refreshTokenIfNeeded(user);
-    const data = await makeApiCall(
-      user.quickBooksTokens.accessToken,
-      user.quickBooksTokens.realmId,
-      'companyinfo/' + user.quickBooksTokens.realmId
-    );
+    const { result } = await callQuickBooks(user, {
+      method: 'GET',
+      url: 'companyinfo/' + user.quickBooksTokens.realmId
+    });
     
-    res.json({ success: true, companyInfo: data });
+    if (result.status === 401) {
+      return res.status(401).json({ message: 'QuickBooks authorization expired. Please reconnect.' });
+    }
+
+    res.json({ success: true, companyInfo: result.data });
   } catch (error) {
     console.error('Get company info error:', error);
     res.status(500).json({ message: error.message });
@@ -158,14 +224,16 @@ exports.getInvoices = async (req, res) => {
       return res.status(400).json({ message: 'QuickBooks not connected' });
     }
 
-    user = await refreshTokenIfNeeded(user);
-    const data = await makeApiCall(
-      user.quickBooksTokens.accessToken,
-      user.quickBooksTokens.realmId,
-      'query?query=select * from Invoice'
-    );
+    const { result } = await callQuickBooks(user, {
+      method: 'GET',
+      url: 'query?query=select * from Invoice'
+    });
     
-    res.json({ success: true, invoices: data.QueryResponse?.Invoice || [] });
+    if (result.status === 401) {
+      return res.status(401).json({ message: 'QuickBooks authorization expired. Please reconnect.' });
+    }
+
+    res.json({ success: true, invoices: result.data?.QueryResponse?.Invoice || [] });
   } catch (error) {
     console.error('Get invoices error:', error);
     res.status(500).json({ message: error.message });
@@ -179,18 +247,14 @@ exports.proxyRequest = async (req, res) => {
       return res.status(400).json({ message: 'QuickBooks not connected' });
     }
 
-    user = await refreshTokenIfNeeded(user);
     const { method, url, data } = req.body;
 
-    const result = await makeApiCall(
-      user.quickBooksTokens.accessToken,
-      user.quickBooksTokens.realmId,
-      url,
-      method,
-      data
-    );
+    const { result } = await callQuickBooks(user, { method, url, data });
+    if (result.status === 401) {
+      return res.status(401).json({ message: 'QuickBooks authorization expired. Please reconnect.' });
+    }
     
-    res.json(result);
+    res.status(result.status || 200).json(result.data);
   } catch (error) {
     console.error('Proxy request error:', error);
     res.status(500).json({ message: error.message });

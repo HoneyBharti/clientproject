@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema({
   },
   servicePlan: {
     type: String,
-    enum: ['Starter', 'Growth', 'Scale']
+    enum: ['Starter', 'Growth', 'Scale', 'Micro', 'Vitals', 'Elite']
   },
   status: {
     type: String,

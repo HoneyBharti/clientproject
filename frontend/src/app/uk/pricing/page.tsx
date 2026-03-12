@@ -115,9 +115,9 @@ export default function UkPricingPage() {
                         <UKFeeCalculator />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        <PlanCard {...planData.Formation} onSelect={() => router.push('/checkout?planName=Formation&state=UK&entityType=Limited&country=UK&amount=499')} />
-                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/checkout?planName=Compliance&state=UK&entityType=Limited&country=UK&amount=999')} />
-                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/checkout?planName=AllInOne&state=UK&entityType=Limited&country=UK&amount=2499')} />
+                        <PlanCard {...planData.Formation} onSelect={() => router.push('/onboarding?planName=Formation&state=UK&entityType=Limited&country=UK&amount=499')} />
+                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/onboarding?planName=Compliance&state=UK&entityType=Limited&country=UK&amount=999')} />
+                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/onboarding?planName=AllInOne&state=UK&entityType=Limited&country=UK&amount=2499')} />
                     </div>
                 </div>
             </section>

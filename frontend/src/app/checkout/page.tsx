@@ -172,11 +172,15 @@ function CheckoutPageContent() {
                                             }
                                             
                                             const data = await response.json();
-                                            if (data.url) {
-                                                window.location.href = data.url;
-                                            } else {
-                                                alert('Unable to create checkout session');
+                                            if (data?.url && data.url.includes('/dashboard')) {
+                                                window.location.href = '/dashboard?payment=success';
+                                                return;
                                             }
+                                            if (data?.url) {
+                                                window.location.href = data.url;
+                                                return;
+                                            }
+                                            window.location.href = '/dashboard?payment=success';
                                         } catch (error) {
                                             console.error('Payment error:', error);
                                             alert('Payment error. Please try again.');

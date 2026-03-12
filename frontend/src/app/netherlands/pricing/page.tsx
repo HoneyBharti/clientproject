@@ -115,9 +115,9 @@ export default function NetherlandsPricingPage() {
                         <NetherlandsFeeCalculator />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        <PlanCard {...planData.Formation} onSelect={() => router.push('/checkout?planName=Formation&state=Netherlands&entityType=BV&country=Netherlands&amount=999')} />
-                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/checkout?planName=Compliance&state=Netherlands&entityType=BV&country=Netherlands&amount=1999')} />
-                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/checkout?planName=AllInOne&state=Netherlands&entityType=BV&country=Netherlands&amount=3999')} />
+                        <PlanCard {...planData.Formation} onSelect={() => router.push('/onboarding?planName=Formation&state=Netherlands&entityType=BV&country=Netherlands&amount=999')} />
+                        <PlanCard {...planData.Compliance} onSelect={() => router.push('/onboarding?planName=Compliance&state=Netherlands&entityType=BV&country=Netherlands&amount=1999')} />
+                        <PlanCard {...planData.AllInOne} onSelect={() => router.push('/onboarding?planName=AllInOne&state=Netherlands&entityType=BV&country=Netherlands&amount=3999')} />
                     </div>
                 </div>
             </section>

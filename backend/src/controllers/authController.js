@@ -41,7 +41,9 @@ exports.register = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
-          companyName: user.companyName
+          companyName: user.companyName,
+          servicePlan: user.servicePlan,
+          subscriptionStatus: user.subscriptionStatus
         }
       });
     });
@@ -78,7 +80,10 @@ exports.login = async (req, res) => {
           id: user._id,
           name: user.name,
           email: user.email,
-          role: user.role
+          role: user.role,
+          companyName: user.companyName,
+          servicePlan: user.servicePlan,
+          subscriptionStatus: user.subscriptionStatus
         }
       });
     });

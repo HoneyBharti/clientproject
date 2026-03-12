@@ -1,6 +1,11 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Payment = require('../models/Payment');
 const User = require('../models/User');
+const Order = require('../models/Order');
+
+const generateOrderNumber = () => {
+  return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+};
 
 exports.createPaymentIntent = async (req, res) => {
   try {
@@ -62,7 +67,7 @@ exports.createCheckoutSession = async (req, res) => {
         subscriptionStatus: 'active'
       });
 
-      await Payment.create({
+      const payment = await Payment.create({
         user: req.user._id,
         stripePaymentId: fakeSessionId,
         amount,
@@ -74,6 +79,24 @@ exports.createCheckoutSession = async (req, res) => {
           entityType: entityType || 'LLC'
         }
       });
+
+      const existingOrder = await Order.findOne({ payment: payment._id });
+      if (!existingOrder) {
+        await Order.create({
+          user: req.user._id,
+          orderNumber: generateOrderNumber(),
+          serviceType: req.body?.serviceType || 'formation',
+          plan,
+          status: 'pending',
+          amount,
+          payment: payment._id,
+          metadata: {
+            country: country || 'USA',
+            state: state || 'Wyoming',
+            entityType: entityType || 'LLC'
+          }
+        });
+      }
     }
 
     res.json({ success: true, sessionId: fakeSessionId, url: fakeUrl });

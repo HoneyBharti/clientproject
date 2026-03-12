@@ -25,7 +25,7 @@ const paymentSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['Starter', 'Growth', 'Scale']
+    enum: ['Starter', 'Growth', 'Scale', 'Micro', 'Vitals', 'Elite', 'Formation', 'Compliance', 'AllInOne']
   },
   paymentMethod: String,
   metadata: mongoose.Schema.Types.Mixed

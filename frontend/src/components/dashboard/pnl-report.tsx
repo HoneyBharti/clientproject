@@ -101,16 +101,16 @@ const ReportRow: React.FC<{ row: ReportRowData; level: number }> = ({ row, level
 };
 
 export const ProfitAndLossReport: React.FC<{ data: ReportData }> = ({ data }) => {
-  if (!data) return <p>No report data available.</p>;
+  if (!data || !data.Header || !data.Rows) return <p>No report data available.</p>;
 
   const { Header: reportHeader, Rows } = data;
 
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle>{reportHeader.ReportName}</CardTitle>
+        <CardTitle>{reportHeader.ReportName || 'Financial Report'}</CardTitle>
         <CardDescription>
-          For the period from {reportHeader.StartPeriod} to {reportHeader.EndPeriod} (Currency: {reportHeader.Currency})
+          For the period from {reportHeader.StartPeriod || 'N/A'} to {reportHeader.EndPeriod || 'N/A'} (Currency: {reportHeader.Currency || 'N/A'})
         </CardDescription>
       </CardHeader>
       <CardContent>

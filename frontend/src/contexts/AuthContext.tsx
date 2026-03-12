@@ -10,6 +10,8 @@ interface User {
   email: string;
   role: string;
   companyName?: string;
+  servicePlan?: string;
+  subscriptionStatus?: string;
 }
 
 interface AuthContextType {
@@ -27,6 +29,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  const parseResponse = async (response: Response) => {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return response.json().catch(() => null);
+    }
+    const text = await response.text().catch(() => '');
+    return { message: text };
+  };
+
   const checkAuth = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -34,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await parseResponse(response);
         setUser(data.user);
       } else {
         setUser(null);
@@ -58,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await response.json();
+    const data = await parseResponse(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Login failed');

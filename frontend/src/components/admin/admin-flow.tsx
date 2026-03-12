@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,6 +20,7 @@ import {
   Mail,
   Menu,
   Package,
+  PiggyBank,
   PenSquare,
   RefreshCw,
   Save,
@@ -31,7 +32,6 @@ import {
   X,
 } from "lucide-react";
 
-import { adminUsers, contentQueue } from "@/components/admin/mock-data";
 import type { AdminUser, ClientStatus, ContentStage, QuickBooksStatus, UserRegion } from "@/components/admin/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,10 +47,12 @@ import { ActivityView } from "@/components/admin/views/activity-view";
 import { BlogsView } from "@/components/admin/views/blogs-view";
 import { ClientDocumentsModal } from "@/components/admin/views/client-documents-modal";
 import { ComplianceView } from "@/components/admin/views/compliance-view";
+import { TaxesView } from "@/components/admin/views/taxes-view";
 import { DocumentsView } from "@/components/admin/views/documents-view";
 import { EmailsView } from "@/components/admin/views/emails-view";
 import { FormationsView } from "@/components/admin/views/formations-view";
 import { OrdersView } from "@/components/admin/views/orders-view";
+import { OnboardingView } from "@/components/admin/views/onboarding-view";
 import { OverviewView } from "@/components/admin/views/overview-view";
 import { PaymentsView } from "@/components/admin/views/payments-view";
 import { QuickbooksView } from "@/components/admin/views/quickbooks-view";
@@ -61,12 +63,14 @@ import { SubscriptionsView } from "@/components/admin/views/subscriptions-view";
 import { TicketsView } from "@/components/admin/views/tickets-view";
 import { UsersView } from "@/components/admin/views/users-view";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAdminData } from "@/hooks/useAdminData";
 import { API_BASE_URL } from "@/lib/api-base";
 
 type AdminView =
   | "overview"
   | "users"
   | "orders"
+  | "onboarding"
   | "formations"
   | "documents"
   | "payments"
@@ -79,7 +83,8 @@ type AdminView =
   | "blogs"
   | "services"
   | "quickbooks"
-  | "compliance";
+  | "compliance"
+  | "taxes";
 type DocumentStatus = "pending" | "verified" | "rejected" | "missing";
 type DocumentSource = "client_uploads" | "legal_docs";
 type DocumentCategory = "KYC" | "Tax" | "Compliance" | "Banking";
@@ -155,6 +160,10 @@ type EmailLog = {
   user: string;
   status: "sent" | "failed";
   sentAt: string;
+  to?: string;
+  subject?: string;
+  body?: string;
+  template?: string;
 };
 
 type EmailTemplate = {
@@ -162,6 +171,20 @@ type EmailTemplate = {
   name: string;
   subject: string;
   body: string;
+};
+
+type BlogRecord = {
+  id: string;
+  title: string;
+  slug: string;
+  image: string;
+  shortDescription: string;
+  fullContent: string;
+  author: string;
+  category: string;
+  tags: string[];
+  status: "draft" | "published";
+  createdAt: string;
 };
 
 type CmsRecord = {
@@ -257,6 +280,7 @@ const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
   overview: { title: "Dashboard", subtitle: "Business overview and quick metrics" },
   users: { title: "Users", subtitle: "Manage users, profiles, orders and payments" },
   orders: { title: "Orders", subtitle: "Track service requests and execution status" },
+  onboarding: { title: "Onboarding", subtitle: "Review onboarding submissions before formation" },
   formations: { title: "Company Formations", subtitle: "Monitor formation progress by stage" },
   documents: { title: "Document Center", subtitle: "Track document collection and verification" },
   payments: { title: "Payments", subtitle: "Transactions, invoices, refunds and failures" },
@@ -270,12 +294,14 @@ const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
   services: { title: "Service Pages", subtitle: "Legacy route: service content queue" },
   quickbooks: { title: "QuickBooks Integration", subtitle: "Monitor accounting system connections" },
   compliance: { title: "Compliance Tracking", subtitle: "Monitor deadlines and risk levels" },
+  taxes: { title: "Taxes & Filings", subtitle: "Manage government filings and submissions" },
 };
 
 const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { key: "overview", label: "Dashboard", icon: LayoutDashboard },
   { key: "users", label: "Users", icon: Users },
   { key: "orders", label: "Orders", icon: ClipboardList },
+  { key: "onboarding", label: "Onboarding", icon: ClipboardList },
   { key: "formations", label: "Company Formations", icon: Building2 },
   { key: "documents", label: "Documents", icon: FileCheck2 },
   { key: "payments", label: "Payments", icon: CreditCard },
@@ -283,6 +309,8 @@ const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType
   { key: "tickets", label: "Support Tickets", icon: LifeBuoy },
   { key: "emails", label: "Emails", icon: Mail },
   { key: "quickbooks", label: "QuickBooks", icon: ShieldCheck },
+  { key: "compliance", label: "Compliance", icon: ShieldCheck },
+  { key: "taxes", label: "Taxes & Filings", icon: PiggyBank },
   { key: "blogs", label: "Blog Posts", icon: PenSquare },
   { key: "services", label: "Service Pages", icon: Briefcase },
   { key: "reports", label: "Reports", icon: BarChart3 },
@@ -294,6 +322,7 @@ const viewHref: Record<AdminView, string> = {
   overview: "/admin",
   users: "/admin/users",
   orders: "/admin/orders",
+  onboarding: "/admin/onboarding",
   formations: "/admin/formations",
   payments: "/admin/payments",
   subscriptions: "/admin/subscriptions",
@@ -307,6 +336,7 @@ const viewHref: Record<AdminView, string> = {
   documents: "/admin/documents",
   quickbooks: "/admin/quickbooks",
   compliance: "/admin/compliance",
+  taxes: "/admin/taxes",
 };
 
 const clientStatusClass: Record<ClientStatus, string> = {
@@ -624,7 +654,8 @@ function StatCard({ label, value, icon: Icon, tone, change, changeType }: {
 export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView }) {
   const router = useRouter();
   const { checkAuth } = useAuth();
-  const [userRecords, setUserRecords] = useState<AdminUser[]>(adminUsers);
+  const adminData = useAdminData();
+  const [userRecords, setUserRecords] = useState<AdminUser[]>([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
@@ -632,7 +663,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | ClientStatus>("all");
   const [region, setRegion] = useState<"all" | UserRegion>("all");
-  const [selectedId, setSelectedId] = useState(adminUsers[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [userActionMessage, setUserActionMessage] = useState("");
   const [isUserDocumentModalOpen, setIsUserDocumentModalOpen] = useState(false);
   const [adminUploadFile, setAdminUploadFile] = useState<File | null>(null);
@@ -644,30 +675,30 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   const [contentQ, setContentQ] = useState("");
   const [contentStage, setContentStage] = useState<"all" | ContentStage>("all");
 
-  const [documentRecords, setDocumentRecords] = useState(initialDocumentQueue);
+  const [documentRecords, setDocumentRecords] = useState<typeof initialDocumentQueue>([]);
   const [documentQ, setDocumentQ] = useState("");
   const [documentStatus, setDocumentStatus] = useState<"all" | DocumentStatus>("all");
   const [documentActionMessage, setDocumentActionMessage] = useState("");
 
   const [qbQ, setQbQ] = useState("");
   const [qbStatus, setQbStatus] = useState<"all" | QuickBooksStatus>("all");
-  const [selectedQbId, setSelectedQbId] = useState(adminUsers[0]?.id ?? "");
+  const [selectedQbId, setSelectedQbId] = useState("");
   const [qbActionMessage, setQbActionMessage] = useState("");
 
   const [complianceStatus, setComplianceStatus] = useState<"all" | ComplianceHealth>("all");
   const [complianceRegion, setComplianceRegion] = useState<"all" | UserRegion>("all");
-  const [orders, setOrders] = useState<OrderRecord[]>(initialOrders);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [orderQ, setOrderQ] = useState("");
   const [orderStatus, setOrderStatus] = useState<"all" | OrderStatus>("all");
 
-  const [formations, setFormations] = useState<FormationRecord[]>(initialFormations);
+  const [formations, setFormations] = useState<FormationRecord[]>([]);
   const [formationQ, setFormationQ] = useState("");
   const [formationStage, setFormationStage] = useState<"all" | FormationStage>("all");
 
-  const [payments, setPayments] = useState<PaymentRecord[]>(initialPayments);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [paymentStatus, setPaymentStatus] = useState<"all" | PaymentStatus>("all");
 
-  const [plans, setPlans] = useState<PlanRecord[]>(initialPlans);
+  const [plans, setPlans] = useState<PlanRecord[]>([]);
   const [editingPlanId, setEditingPlanId] = useState("");
   const [planForm, setPlanForm] = useState({
     name: "",
@@ -678,22 +709,24 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     active: true,
   });
 
-  const [tickets, setTickets] = useState<SupportTicket[]>(initialTickets);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [ticketStatus, setTicketStatus] = useState<"all" | TicketStatus>("all");
   const [ticketPriority, setTicketPriority] = useState<"all" | TicketPriority>("all");
   const [ticketReply, setTicketReply] = useState("");
 
-  const [emailLogs, setEmailLogs] = useState<EmailLog[]>(initialEmailLogs);
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(initialEmailTemplates);
   const [selectedTemplateId, setSelectedTemplateId] = useState(initialEmailTemplates[0]?.id ?? "");
   const [templateSubject, setTemplateSubject] = useState(initialEmailTemplates[0]?.subject ?? "");
   const [templateBody, setTemplateBody] = useState(initialEmailTemplates[0]?.body ?? "");
 
-  const [cmsRecords, setCmsRecords] = useState<CmsRecord[]>(initialCmsRecords);
+  const [blogs, setBlogs] = useState<BlogRecord[]>([]);
+
+  const [cmsRecords, setCmsRecords] = useState<CmsRecord[]>([]);
   const [cmsSection, setCmsSection] = useState<"all" | CmsSection>("all");
   const [cmsQ, setCmsQ] = useState("");
 
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(initialActivityLogs);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [activityQ, setActivityQ] = useState("");
 
   const [systemSettings, setSystemSettings] = useState({
@@ -721,6 +754,138 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   const [liveUserDocuments, setLiveUserDocuments] = useState<Record<string, LiveAdminDocument[]>>({});
   const [isUsersDataLoading, setIsUsersDataLoading] = useState(true);
   const [usersDataError, setUsersDataError] = useState("");
+
+  const formatServiceType = useCallback((value?: string) => {
+    if (!value) return "Service";
+    return value
+      .replace(/_/g, "-")
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }, []);
+
+  const mapOrderStatusFromBackend = useCallback((status?: string): OrderStatus => {
+    switch (status) {
+      case "confirmed":
+        return "waiting_documents";
+      case "in_progress":
+        return "in_progress";
+      case "completed":
+        return "completed";
+      case "cancelled":
+      case "refunded":
+        return "cancelled";
+      case "pending":
+      default:
+        return "pending";
+    }
+  }, []);
+
+  const mapOrderStatusToBackend = useCallback((status: OrderStatus) => {
+    switch (status) {
+      case "waiting_documents":
+        return "confirmed";
+      case "in_progress":
+        return "in_progress";
+      case "completed":
+        return "completed";
+      case "cancelled":
+        return "cancelled";
+      case "pending":
+      default:
+        return "pending";
+    }
+  }, []);
+
+  const mapFormationStatusFromBackend = useCallback((status?: string): FormationStage => {
+    switch (status) {
+      case "processing":
+      case "documents_required":
+        return "documents_submitted";
+      case "filed":
+        return "filed_with_government";
+      case "approved":
+        return "approved";
+      case "completed":
+        return "documents_delivered";
+      case "pending":
+      default:
+        return "application_received";
+    }
+  }, []);
+
+  const mapFormationStageToBackend = useCallback((stage: FormationStage) => {
+    switch (stage) {
+      case "documents_submitted":
+        return "processing";
+      case "filed_with_government":
+        return "filed";
+      case "approved":
+        return "approved";
+      case "documents_delivered":
+        return "completed";
+      case "application_received":
+      default:
+        return "pending";
+    }
+  }, []);
+
+  const mapTicketStatusFromBackend = useCallback((status?: string): TicketStatus => {
+    switch (status) {
+      case "in_progress":
+      case "waiting_customer":
+        return "in_progress";
+      case "resolved":
+        return "resolved";
+      case "closed":
+        return "closed";
+      case "open":
+      default:
+        return "open";
+    }
+  }, []);
+
+  const mapTicketStatusToBackend = useCallback((status: TicketStatus) => {
+    switch (status) {
+      case "in_progress":
+        return "in_progress";
+      case "resolved":
+        return "resolved";
+      case "closed":
+        return "closed";
+      case "open":
+      default:
+        return "open";
+    }
+  }, []);
+
+  const normalizeEmailStatus = useCallback(
+    (status?: string): "sent" | "failed" => (status === "sent" ? "sent" : "failed"),
+    []
+  );
+
+  useEffect(() => {
+    adminData.loadOrders();
+    adminData.loadOnboardingSubmissions();
+    adminData.loadFormations();
+    adminData.loadTickets();
+    adminData.loadServices();
+    adminData.loadEmails();
+    adminData.loadBlogs();
+    adminData.loadSettings();
+    adminData.loadCompliance();
+    adminData.loadActivityLogs();
+  }, [
+    adminData.loadBlogs,
+    adminData.loadCompliance,
+    adminData.loadActivityLogs,
+    adminData.loadEmails,
+    adminData.loadFormations,
+    adminData.loadOnboardingSubmissions,
+    adminData.loadOrders,
+    adminData.loadServices,
+    adminData.loadSettings,
+    adminData.loadTickets,
+  ]);
 
   const handleAdminLogout = async () => {
     if (isLoggingOut) return;
@@ -849,24 +1014,198 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     loadAdminUsersData();
   }, []);
 
+  useEffect(() => {
+    if (adminData.orders.length === 0) {
+      setOrders([]);
+      return;
+    }
+
+    const mapped = adminData.orders.map((order: any) => ({
+      id: String(order._id || order.id),
+      userId: String(order.user?._id || order.user || ""),
+      customerName: order.user?.name || "Unknown",
+      serviceType: formatServiceType(order.serviceType || order.plan),
+      country: (order.metadata?.country || order.user?.region || "USA") as UserRegion,
+      status: mapOrderStatusFromBackend(order.status),
+      assignedStaff: order.assignedTo?.name || "Unassigned",
+      paymentStatus: (order.payment?.status || "pending") as PaymentStatus,
+      amount: Number(order.amount || 0),
+      documents: String(order.deliverables?.length || 0),
+      createdAt: order.createdAt,
+    }));
+
+    setOrders(mapped);
+  }, [adminData.orders, formatServiceType, mapOrderStatusFromBackend]);
+
+  useEffect(() => {
+    if (adminData.formations.length === 0) {
+      setFormations([]);
+      return;
+    }
+
+    const mapped = adminData.formations.map((formation: any) => ({
+      id: String(formation._id || formation.id),
+      companyName: formation.companyName,
+      country: (formation.country || "USA") as UserRegion,
+      formationType: formation.entityType || "LLC",
+      userId: String(formation.user?._id || formation.user || ""),
+      jurisdiction: formation.state || "N/A",
+      stage: mapFormationStatusFromBackend(formation.status),
+      assignedAgent: formation.assignedTo?.name || "Unassigned",
+    }));
+
+    setFormations(mapped);
+  }, [adminData.formations, mapFormationStatusFromBackend]);
+
+  useEffect(() => {
+    if (adminData.tickets.length === 0) {
+      setTickets([]);
+      return;
+    }
+
+    const mapped = adminData.tickets.map((ticket: any) => ({
+      id: String(ticket._id || ticket.id),
+      userName: ticket.user?.name || "Unknown",
+      subject: ticket.subject,
+      status: mapTicketStatusFromBackend(ticket.status),
+      priority: ticket.priority || "low",
+      attachments: ticket.attachments?.length || 0,
+      updatedAt: ticket.updatedAt || ticket.createdAt,
+    }));
+
+    setTickets(mapped);
+  }, [adminData.tickets, mapTicketStatusFromBackend]);
+
+  useEffect(() => {
+    if (adminData.emails.length === 0) {
+      setEmailLogs([]);
+      return;
+    }
+
+    const mapped = adminData.emails.map((email: any) => ({
+      id: String(email._id || email.id),
+      type: email.template || email.subject || "Email",
+      user: email.user?.name || email.to || "Unknown",
+      status: normalizeEmailStatus(email.status),
+      sentAt: email.sentAt || email.createdAt,
+      to: email.to,
+      subject: email.subject,
+      body: email.body,
+      template: email.template,
+    }));
+
+    setEmailLogs(mapped);
+  }, [adminData.emails, normalizeEmailStatus]);
+
+  useEffect(() => {
+    if (adminData.blogs.length === 0) {
+      setBlogs([]);
+      return;
+    }
+
+    const mapped = adminData.blogs.map((blog: any) => {
+      const authorValue =
+        typeof blog.author === "string"
+          ? blog.author
+          : blog.author?.name || blog.author?.email || blog.author?._id || "Admin";
+
+      return {
+        id: String(blog._id || blog.id),
+        title: blog.title,
+        slug: blog.slug,
+        image: blog.featuredImage || blog.image || `https://placehold.co/160x96/e2e8f0/0f172a?text=${encodeURIComponent(String(blog.title || "Blog").slice(0, 24))}`,
+        shortDescription: blog.excerpt || blog.shortDescription || "",
+        fullContent: blog.content || blog.fullContent || "",
+        author: authorValue,
+        category: blog.category || "General",
+        tags: Array.isArray(blog.tags) ? blog.tags : [],
+        status: blog.status === "published" ? "published" : "draft",
+        createdAt: blog.createdAt || blog.updatedAt || new Date().toISOString(),
+      };
+    });
+
+    setBlogs(mapped);
+  }, [adminData.blogs]);
+
+  useEffect(() => {
+    const userLookup = new Map((liveUsers || []).map((user) => [user.id, user]));
+    if (livePayments.length === 0) {
+      setPayments([]);
+      return;
+    }
+
+    const mapped = livePayments.map((payment) => ({
+      id: payment.id,
+      userId: payment.userId,
+      userName: userLookup.get(payment.userId)?.name || "Unknown",
+      plan: payment.plan || "N/A",
+      amount: Number(payment.amount || 0),
+      currency: "USD",
+      stripePaymentId: payment.stripePaymentId,
+      status: payment.status,
+      date: payment.createdAt,
+    }));
+
+    setPayments(mapped);
+  }, [livePayments, liveUsers]);
+
+  useEffect(() => {
+    if (!adminData.settings.length) {
+      return;
+    }
+
+    const settingsMap = new Map(adminData.settings.map((setting: any) => [setting.key, setting.value]));
+    const countryAvailabilityValue = settingsMap.get("countryAvailability");
+
+    setSystemSettings((prev) => ({
+      ...prev,
+      stripePublishableKey: settingsMap.get("stripePublishableKey") ?? prev.stripePublishableKey,
+      stripeSecretKey: settingsMap.get("stripeSecretKey") ?? prev.stripeSecretKey,
+      emailService: settingsMap.get("emailService") ?? prev.emailService,
+      currency: settingsMap.get("currency") ?? prev.currency,
+      taxRate: String(settingsMap.get("taxRate") ?? prev.taxRate),
+      countryAvailability: {
+        ...prev.countryAvailability,
+        ...(countryAvailabilityValue && typeof countryAvailabilityValue === "object" ? countryAvailabilityValue : {}),
+      },
+    }));
+
+    const storedPlans = settingsMap.get("plans");
+    if (Array.isArray(storedPlans)) {
+      setPlans(storedPlans as PlanRecord[]);
+    }
+  }, [adminData.settings]);
+
+  useEffect(() => {
+    if (!liveUsers?.length) return;
+    if (!selectedId) {
+      setSelectedId(liveUsers[0].id);
+    }
+    if (!selectedQbId) {
+      setSelectedQbId(liveUsers[0].id);
+    }
+  }, [liveUsers, selectedId, selectedQbId]);
+
+  const metricsUsers = liveUsers ?? userRecords;
+
   const metrics = useMemo(() => {
-    const active = userRecords.filter((u) => u.status === "active").length;
-    const totalUsers = userRecords.length;
+    const active = metricsUsers.filter((u) => u.status === "active").length;
+    const totalUsers = metricsUsers.length;
     const totalOrders = orders.length;
-    const activeSubscriptions = userRecords.filter((u) => u.status === "active").length;
+    const activeSubscriptions = metricsUsers.filter((u) => u.status === "active").length;
     const totalRevenue = payments
       .filter((payment) => payment.status === "succeeded")
       .reduce((sum, payment) => sum + payment.amount, 0);
     const pendingRequests =
       orders.filter((order) => order.status === "pending" || order.status === "waiting_documents").length +
       tickets.filter((ticket) => ticket.status === "open" || ticket.status === "in_progress").length;
-    const recentSignups = Math.min(6, userRecords.length);
-    const qb = userRecords.length ? Math.round((userRecords.filter((u) => u.quickBooksStatus === "connected").length / userRecords.length) * 100) : 0;
-    const complianceSoon = userRecords.filter((u) => isDueSoon(u.complianceDueAt, 21)).length;
-    const pending = contentQueue.filter((c) => c.stage !== "published" && c.stage !== "archived").length;
-    const qbIssues = userRecords.filter((u) => u.quickBooksStatus !== "connected").length;
+    const recentSignups = Math.min(6, metricsUsers.length);
+    const qb = metricsUsers.length ? Math.round((metricsUsers.filter((u) => u.quickBooksStatus === "connected").length / metricsUsers.length) * 100) : 0;
+    const complianceSoon = metricsUsers.filter((u: any) => isDueSoon(u.complianceDueAt || u.createdAt, 21)).length;
+    const pending = blogs.filter((blog) => blog.status !== "published").length;
+    const qbIssues = metricsUsers.filter((u) => u.quickBooksStatus !== "connected").length;
     const docsBacklog = documentRecords.filter((doc) => doc.status !== "verified").length;
-    const overdueCompliance = userRecords.filter((u) => daysUntil(u.complianceDueAt) < 0).length;
+    const overdueCompliance = metricsUsers.filter((u: any) => daysUntil(u.complianceDueAt || u.createdAt) < 0).length;
     return {
       active,
       totalUsers,
@@ -882,11 +1221,14 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       docsBacklog,
       overdueCompliance,
     };
-  }, [documentRecords, orders, payments, tickets, userRecords]);
+  }, [blogs, documentRecords, metricsUsers, orders, payments, tickets]);
 
   const recentSignupUsers = useMemo(
-    () => [...userRecords].sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()).slice(0, 6),
-    [userRecords]
+    () =>
+      [...(metricsUsers as any[])].sort(
+        (a, b) => new Date(b.lastActivityAt || b.createdAt).getTime() - new Date(a.lastActivityAt || a.createdAt).getTime()
+      ).slice(0, 6),
+    [metricsUsers]
   );
 
   const resolvedMetrics = dashboardPayload?.stats ?? metrics;
@@ -969,13 +1311,13 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     }
   }, [selectedId, usersForUsersView]);
 
-  useEffect(() => {
-    const loadSelectedUserDocuments = async () => {
-      if (!liveUsers || !selectedUserForUsersView) return;
-      if (liveUserDocuments[selectedUserForUsersView.id]) return;
+  const loadUserDocuments = useCallback(
+    async (userId: string, force = false) => {
+      if (!userId) return;
+      if (!force && liveUserDocuments[userId]) return;
 
       try {
-        const response = await fetch(`${API_BASE_URL}/documents/admin/user/${selectedUserForUsersView.id}`, {
+        const response = await fetch(`${API_BASE_URL}/documents/admin/user/${userId}`, {
           credentials: "include",
         });
         const data = await response.json().catch(() => null);
@@ -985,7 +1327,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
         }
 
         const normalizedDocuments: LiveAdminDocument[] = (data.documents || []).map((document: any) => ({
-          id: String(document.id),
+          id: String(document.id || document._id),
           document: document.name,
           category: document.source === "client_uploads" ? "Client Upload" : "Admin Upload",
           status: document.status,
@@ -995,18 +1337,55 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
 
         setLiveUserDocuments((prev) => ({
           ...prev,
-          [selectedUserForUsersView.id]: normalizedDocuments,
+          [userId]: normalizedDocuments,
         }));
       } catch {
         setLiveUserDocuments((prev) => ({
           ...prev,
-          [selectedUserForUsersView.id]: [],
+          [userId]: [],
         }));
       }
-    };
+    },
+    [liveUserDocuments]
+  );
 
-    loadSelectedUserDocuments();
-  }, [liveUserDocuments, liveUsers, selectedUserForUsersView]);
+  useEffect(() => {
+    if (!liveUsers?.length) return;
+    const missingUsers = liveUsers.filter((user) => !liveUserDocuments[user.id]);
+    if (!missingUsers.length) return;
+    Promise.allSettled(missingUsers.map((user) => loadUserDocuments(user.id)));
+  }, [liveUsers, liveUserDocuments, loadUserDocuments]);
+
+  useEffect(() => {
+    if (!selectedUserForUsersView?.id) return;
+    loadUserDocuments(selectedUserForUsersView.id);
+  }, [loadUserDocuments, selectedUserForUsersView?.id]);
+
+  useEffect(() => {
+    if (!liveUsers?.length) {
+      setDocumentRecords([]);
+      return;
+    }
+
+    const userMap = new Map(liveUsers.map((user) => [user.id, user]));
+    const nextRecords = Object.entries(liveUserDocuments).flatMap(([userId, docs]) => {
+      const user = userMap.get(userId);
+      if (!docs?.length) return [];
+      return docs.map((doc) => ({
+        id: String(doc.id),
+        client: user?.name || "Unknown",
+        company: user?.companyName || "N/A",
+        document: doc.document,
+        category: (doc.source === "client_uploads" ? "KYC" : "Compliance") as DocumentCategory,
+        source: doc.source,
+        status: doc.status,
+        updatedAt: doc.updatedAt,
+      }));
+    });
+
+    nextRecords.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    setDocumentRecords(nextRecords);
+  }, [liveUserDocuments, liveUsers]);
 
   const filteredDocuments = useMemo(
     () =>
@@ -1020,32 +1399,102 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
 
   const qbUsers = useMemo(
     () =>
-      userRecords.filter((u) => {
-        const matchesQ = [u.name, u.companyName, u.email].join(" ").toLowerCase().includes(qbQ.toLowerCase());
-        const matchesS = qbStatus === "all" || u.quickBooksStatus === qbStatus;
-        return matchesQ && matchesS;
-      }),
-    [qbQ, qbStatus, userRecords]
+      (liveUsers || userRecords)
+        .filter((u) => {
+          const matchesQ = [u.name, u.companyName, u.email].join(" ").toLowerCase().includes(qbQ.toLowerCase());
+          const matchesS = qbStatus === "all" || u.quickBooksStatus === qbStatus;
+          return matchesQ && matchesS;
+        })
+        .map((u: any) => ({
+          ...u,
+          accountOwner: u.accountOwner || "N/A",
+        })),
+    [qbQ, qbStatus, liveUsers, userRecords]
   );
 
   const selectedQbUser = qbUsers.find((u) => u.id === selectedQbId) ?? qbUsers[0];
 
-  const complianceRows = useMemo(
-    () =>
-      userRecords
-        .map((u) => {
-          const dueInDays = daysUntil(u.complianceDueAt);
-          const health: ComplianceHealth = dueInDays < 0 ? "overdue" : dueInDays <= 7 ? "due_7d" : dueInDays <= 21 ? "due_21d" : "on_track";
-          return { ...u, dueInDays, health };
-        })
-        .filter((row) => {
-          const matchesStatus = complianceStatus === "all" || row.health === complianceStatus;
-          const matchesRegion = complianceRegion === "all" || row.region === complianceRegion;
-          return matchesStatus && matchesRegion;
-        })
-        .sort((a, b) => a.dueInDays - b.dueInDays),
-    [complianceRegion, complianceStatus, userRecords]
-  );
+  const complianceRows = useMemo(() => {
+    if (!adminData.complianceData || !liveUsers?.length) {
+      return [];
+    }
+
+    const usersById = new Map(liveUsers.map((user) => [user.id, user]));
+    const riskUsers = adminData.complianceData.complianceRiskUsers || [];
+    const awaitingUsers = adminData.complianceData.awaitingDocsUsers || [];
+    const pendingDocuments = adminData.complianceData.pendingDocuments || [];
+    const pendingFormations = adminData.complianceData.pendingFormations || [];
+
+    const documentDates = new Map<string, Date[]>();
+    pendingDocuments.forEach((doc: any) => {
+      const userId = String(doc.user?._id || doc.user || "");
+      if (!userId) return;
+      const date = new Date(doc.createdAt || doc.updatedAt || doc.uploadedAt || Date.now());
+      documentDates.set(userId, [...(documentDates.get(userId) || []), date]);
+    });
+
+    const formationDates = new Map<string, Date[]>();
+    pendingFormations.forEach((formation: any) => {
+      const userId = String(formation.user?._id || formation.user || "");
+      if (!userId) return;
+      const date = new Date(formation.createdAt || formation.updatedAt || Date.now());
+      formationDates.set(userId, [...(formationDates.get(userId) || []), date]);
+    });
+
+    const candidateIds = new Set<string>([
+      ...riskUsers.map((user: any) => String(user._id)),
+      ...awaitingUsers.map((user: any) => String(user._id)),
+      ...documentDates.keys(),
+      ...formationDates.keys(),
+    ]);
+
+    const rows = Array.from(candidateIds).map((userId) => {
+      const liveUser = usersById.get(userId);
+      const complianceUser = riskUsers.find((user: any) => String(user._id) === userId)
+        || awaitingUsers.find((user: any) => String(user._id) === userId);
+
+      const userName = liveUser?.name || complianceUser?.name || "Unknown";
+      const companyName = liveUser?.companyName || complianceUser?.companyName || "N/A";
+      const region = (liveUser?.region || complianceUser?.region || "USA") as UserRegion;
+      const servicePlan = liveUser?.servicePlan || "N/A";
+
+      const docDates = documentDates.get(userId) || [];
+      const formDates = formationDates.get(userId) || [];
+      const rawDate =
+        [...docDates, ...formDates].sort((a, b) => a.getTime() - b.getTime())[0]
+        || (liveUser?.createdAt ? new Date(liveUser.createdAt) : new Date());
+
+      const complianceDueAt = rawDate.toISOString();
+      const dueInDays = daysUntil(complianceDueAt);
+      let health: ComplianceHealth = dueInDays < 0 ? "overdue" : dueInDays <= 7 ? "due_7d" : dueInDays <= 21 ? "due_21d" : "on_track";
+
+      if (complianceUser?.status === "compliance_risk") {
+        health = "overdue";
+      } else if (complianceUser?.status === "awaiting_docs" && health === "on_track") {
+        health = "due_7d";
+      }
+
+      return {
+        id: userId,
+        name: userName,
+        companyName,
+        region,
+        servicePlan,
+        complianceDueAt,
+        dueInDays,
+        health,
+        escalationOwner: "N/A",
+      };
+    });
+
+    return rows
+      .filter((row) => {
+        const matchesStatus = complianceStatus === "all" || row.health === complianceStatus;
+        const matchesRegion = complianceRegion === "all" || row.region === complianceRegion;
+        return matchesStatus && matchesRegion;
+      })
+      .sort((a, b) => a.dueInDays - b.dueInDays);
+  }, [adminData.complianceData, complianceRegion, complianceStatus, liveUsers]);
 
   const complianceCounts = useMemo(
     () => ({
@@ -1181,6 +1630,21 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     [activityLogs, activityQ]
   );
 
+  useEffect(() => {
+    if (!adminData.activityLogs?.length) return;
+    setActivityLogs((prev) => {
+      if (!prev.length) {
+        return adminData.activityLogs.map((log: any) => ({
+          id: String(log._id || log.id),
+          action: log.action,
+          actor: log.user?.name || log.user?.email || "System",
+          createdAt: log.createdAt,
+        }));
+      }
+      return prev;
+    });
+  }, [adminData.activityLogs]);
+
   const revenueByCountry = useMemo(() => {
     const map = new Map<UserRegion, number>();
     orders.forEach((order) => {
@@ -1197,7 +1661,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     return Array.from(map.entries()).map(([service, count]) => ({ service, count }));
   }, [orders]);
 
-  const addActivity = (action: string) => {
+  const addActivity = (action: string, entity: string = "settings", entityId?: string) => {
     const entry: ActivityLog = {
       id: `act_${Date.now()}`,
       action,
@@ -1205,6 +1669,14 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       createdAt: new Date().toISOString(),
     };
     setActivityLogs((prev) => [entry, ...prev].slice(0, 60));
+    fetch(`${API_BASE_URL}/activity-logs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action, entity, entityId }),
+    })
+      .then(() => adminData.loadActivityLogs())
+      .catch(() => null);
   };
 
   const setUserActivation = async (activate: boolean) => {
@@ -1308,7 +1780,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   };
 
   const openDocumentModalForClient = (clientName: string) => {
-    const client = userRecords.find((user) => user.name === clientName);
+    const client = (liveUsers || userRecords).find((user) => user.name === clientName);
     if (!client) {
       setDocumentActionMessage(`Client ${clientName} not found in user records.`);
       return;
@@ -1316,7 +1788,22 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     openUserDocumentModal(client.id);
   };
 
-  const uploadDocumentForSelectedClient = () => {
+  const readFileAsBase64 = useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+        } else {
+          reject(new Error("Unable to read file contents."));
+        }
+      };
+      reader.onerror = () => reject(new Error("Unable to read file contents."));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const uploadDocumentForSelectedClient = async () => {
     if (!selectedClient) {
       setAdminUploadMessage("Select a client first.");
       return;
@@ -1326,42 +1813,67 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       return;
     }
 
-    const nowIso = new Date().toISOString();
     const uploadedFileName = adminUploadFile.name;
-    const documentLabel = adminUploadDocumentName.trim() || uploadedFileName;
-    const nextDocument = {
-      id: `doc_${Date.now()}`,
-      client: selectedClient.name,
-      company: selectedClient.companyName,
-      document: documentLabel,
-      category: adminUploadDocumentCategory,
-      source: "legal_docs" as const,
-      status: "verified" as const,
-      updatedAt: nowIso,
-    };
+    try {
+      const fileDataBase64 = await readFileAsBase64(adminUploadFile);
+      const response = await fetch(`${API_BASE_URL}/documents/admin/user/${selectedClient.id}/upload-official`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          fileName: adminUploadDocumentName.trim() || uploadedFileName,
+          mimeType: adminUploadFile.type || "application/octet-stream",
+          fileDataBase64,
+        }),
+      });
+      const data = await response.json().catch(() => null);
 
-    setDocumentRecords((prev) => [nextDocument, ...prev]);
-    setAdminUploadFile(null);
-    setAdminUploadFileInputKey((prev) => prev + 1);
-    setAdminUploadDocumentName("");
-    setAdminUploadMessage(`File "${uploadedFileName}" uploaded for ${selectedClient.name}.`);
-    addActivity(`Uploaded file ${uploadedFileName} for ${selectedClient.name}`);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "Unable to upload document.");
+      }
+
+      await loadUserDocuments(selectedClient.id, true);
+      setAdminUploadFile(null);
+      setAdminUploadFileInputKey((prev) => prev + 1);
+      setAdminUploadDocumentName("");
+      setAdminUploadMessage(`File "${uploadedFileName}" uploaded for ${selectedClient.name}.`);
+      addActivity(`Uploaded file ${uploadedFileName} for ${selectedClient.name}`);
+    } catch (error) {
+      setAdminUploadMessage(error instanceof Error ? error.message : "Unable to upload document.");
+    }
   };
 
-  const setDocumentState = (documentId: string, nextStatus: DocumentStatus) => {
-    setDocumentRecords((prev) =>
-      prev.map((doc) =>
-        doc.id === documentId
-          ? {
-              ...doc,
-              status: nextStatus,
-              updatedAt: new Date().toISOString(),
-            }
-          : doc
-      )
-    );
-    setDocumentActionMessage(`Document status updated to ${nextStatus.replace("_", " ")}.`);
-    addActivity(`Updated document ${documentId} to ${nextStatus}`);
+  const setDocumentState = async (documentId: string, nextStatus: DocumentStatus) => {
+    const target = documentRecords.find((doc) => doc.id === documentId);
+    if (!target) return;
+    if (target.source !== "client_uploads") {
+      setDocumentActionMessage("Only client uploaded documents can be reviewed.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents/admin/${documentId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || "Unable to update document status.");
+      }
+
+      if (target) {
+        await loadUserDocuments(
+          (liveUsers || userRecords).find((user) => user.name === target.client)?.id || "",
+          true
+        );
+      }
+      setDocumentActionMessage(`Document status updated to ${nextStatus.replace("_", " ")}.`);
+      addActivity(`Updated document ${documentId} to ${nextStatus}`);
+    } catch (error) {
+      setDocumentActionMessage(error instanceof Error ? error.message : "Unable to update document status.");
+    }
   };
 
   const setQuickBooksStateForSelected = (nextStatus: QuickBooksStatus) => {
@@ -1371,31 +1883,52 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     }
 
     const nowIso = new Date().toISOString();
-
-    setUserRecords((prev) =>
-      prev.map((u) =>
-        u.id === selectedQbUser.id
-          ? {
-              ...u,
-              quickBooksStatus: nextStatus,
-              lastActivityAt: nowIso,
-            }
-          : u
-      )
-    );
+    if (liveUsers) {
+      setLiveUsers((prev) =>
+        prev
+          ? prev.map((u) =>
+              u.id === selectedQbUser.id
+                ? {
+                    ...u,
+                    quickBooksStatus: nextStatus,
+                    lastActivityAt: nowIso,
+                  }
+                : u
+            )
+          : prev
+      );
+    } else {
+      setUserRecords((prev) =>
+        prev.map((u) =>
+          u.id === selectedQbUser.id
+            ? {
+                ...u,
+                quickBooksStatus: nextStatus,
+                lastActivityAt: nowIso,
+              }
+            : u
+        )
+      );
+    }
 
     setQbActionMessage(`${selectedQbUser.name}: QuickBooks marked as ${nextStatus.replace("_", " ")}.`);
     addActivity(`QuickBooks status updated for ${selectedQbUser.name}`);
   };
 
-  const updateOrderStatus = (orderId: string, nextStatus: OrderStatus) => {
-    setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, status: nextStatus } : order)));
-    addActivity(`Order ${orderId} moved to ${nextStatus.replace("_", " ")}`);
+  const updateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    const backendStatus = mapOrderStatusToBackend(nextStatus);
+    const result = await adminData.updateOrder(orderId, { status: backendStatus });
+    if (result.success) {
+      addActivity(`Order ${orderId} moved to ${nextStatus.replace("_", " ")}`);
+    }
   };
 
-  const updateFormationStage = (formationId: string, nextStage: FormationStage) => {
-    setFormations((prev) => prev.map((formation) => (formation.id === formationId ? { ...formation, stage: nextStage } : formation)));
-    addActivity(`Formation ${formationId} stage updated`);
+  const updateFormationStage = async (formationId: string, nextStage: FormationStage) => {
+    const backendStage = mapFormationStageToBackend(nextStage);
+    const result = await adminData.updateFormation(formationId, { status: backendStage });
+    if (result.success) {
+      addActivity(`Formation ${formationId} stage updated`);
+    }
   };
 
   const refundPayment = (paymentId: string) => {
@@ -1403,7 +1936,22 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     addActivity(`Refunded payment ${paymentId}`);
   };
 
-  const savePlan = () => {
+  const persistPlans = async (nextPlans: PlanRecord[]) => {
+    const result = await adminData.updateSetting({
+      key: "plans",
+      value: nextPlans,
+      category: "general",
+      description: "Admin subscription plans",
+    });
+    if (!result.success) {
+      setSettingsMessage(result.error || "Unable to save plans.");
+      return false;
+    }
+    adminData.loadSettings();
+    return true;
+  };
+
+  const savePlan = async () => {
     if (!planForm.name.trim()) return;
     const features = planForm.features.split(",").map((value) => value.trim()).filter(Boolean);
     const countries = planForm.countries
@@ -1411,25 +1959,25 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       .map((value) => value.trim())
       .filter((value): value is UserRegion => ["USA", "UK", "UAE", "Singapore", "India", "Australia", "Netherlands"].includes(value));
 
+    let nextPlans: PlanRecord[] = [];
+
     if (editingPlanId) {
-      setPlans((prev) =>
-        prev.map((plan) =>
-          plan.id === editingPlanId
-            ? {
-                ...plan,
-                name: planForm.name,
-                pricing: Number(planForm.pricing || 0),
-                billing: planForm.billing,
-                features,
-                countries,
-                active: planForm.active,
-              }
-            : plan
-        )
+      nextPlans = plans.map((plan) =>
+        plan.id === editingPlanId
+          ? {
+              ...plan,
+              name: planForm.name,
+              pricing: Number(planForm.pricing || 0),
+              billing: planForm.billing,
+              features,
+              countries,
+              active: planForm.active,
+            }
+          : plan
       );
       addActivity(`Updated plan ${planForm.name}`);
     } else {
-      setPlans((prev) => [
+      nextPlans = [
         {
           id: `pln_${Date.now()}`,
           name: planForm.name,
@@ -1439,10 +1987,13 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
           countries,
           active: planForm.active,
         },
-        ...prev,
-      ]);
+        ...plans,
+      ];
       addActivity(`Created plan ${planForm.name}`);
     }
+
+    setPlans(nextPlans);
+    await persistPlans(nextPlans);
 
     setEditingPlanId("");
     setPlanForm({ name: "", pricing: "", billing: "one_time", features: "", countries: "USA", active: true });
@@ -1460,30 +2011,52 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     });
   };
 
-  const deletePlan = (planId: string) => {
-    setPlans((prev) => prev.filter((plan) => plan.id !== planId));
+  const deletePlan = async (planId: string) => {
+    const nextPlans = plans.filter((plan) => plan.id !== planId);
+    setPlans(nextPlans);
     addActivity(`Deleted plan ${planId}`);
+    await persistPlans(nextPlans);
   };
 
-  const updateTicketStatus = (ticketId: string, nextStatus: TicketStatus) => {
-    setTickets((prev) => prev.map((ticket) => (ticket.id === ticketId ? { ...ticket, status: nextStatus, updatedAt: new Date().toISOString() } : ticket)));
-    addActivity(`Updated ticket ${ticketId}`);
+  const updateTicketStatus = async (ticketId: string, nextStatus: TicketStatus) => {
+    const backendStatus = mapTicketStatusToBackend(nextStatus);
+    const result = await adminData.updateTicket(ticketId, { status: backendStatus });
+    if (result.success) {
+      addActivity(`Updated ticket ${ticketId}`);
+    }
   };
 
-  const replyTicket = (ticketId: string) => {
-    if (!ticketReply.trim()) return;
+  const replyTicket = async (ticketId: string) => {
+    const message = ticketReply.trim();
+    if (!message) return;
     setTicketReply("");
-    setTickets((prev) =>
-      prev.map((ticket) =>
-        ticket.id === ticketId ? { ...ticket, status: "in_progress", updatedAt: new Date().toISOString() } : ticket
-      )
-    );
-    addActivity(`Replied to ticket ${ticketId}`);
+    const result = await adminData.addTicketMessage(ticketId, message, false);
+    if (result.success) {
+      addActivity(`Replied to ticket ${ticketId}`);
+    }
   };
 
-  const resendEmail = (emailId: string) => {
-    setEmailLogs((prev) => prev.map((entry) => (entry.id === emailId ? { ...entry, status: "sent", sentAt: new Date().toISOString() } : entry)));
-    addActivity(`Resent email ${emailId}`);
+  const resendEmail = async (emailId: string) => {
+    const target = emailLogs.find((entry) => entry.id === emailId);
+    if (!target) return;
+
+    const emailPayload = {
+      to: target.to || target.user,
+      subject: target.subject || target.type,
+      body: target.body || "",
+      template: target.template,
+    };
+
+    if (!emailPayload.to || !emailPayload.subject || !emailPayload.body) {
+      addActivity(`Unable to resend email ${emailId}: missing email data`);
+      return;
+    }
+
+    const result = await adminData.sendEmail(emailPayload);
+    if (result.success) {
+      addActivity(`Resent email ${emailId}`);
+      adminData.loadEmails();
+    }
   };
 
   const onTemplateChange = (templateId: string) => {
@@ -1506,9 +2079,28 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     addActivity(`Updated CMS record ${recordId}`);
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
+    setSettingsMessage("");
+    const updates = [
+      { key: "stripePublishableKey", value: systemSettings.stripePublishableKey, category: "payment" },
+      { key: "stripeSecretKey", value: systemSettings.stripeSecretKey, category: "payment" },
+      { key: "emailService", value: systemSettings.emailService, category: "email" },
+      { key: "currency", value: systemSettings.currency, category: "general" },
+      { key: "taxRate", value: systemSettings.taxRate, category: "general" },
+      { key: "countryAvailability", value: systemSettings.countryAvailability, category: "general" },
+    ];
+
+    const results = await Promise.all(updates.map((setting) => adminData.updateSetting(setting)));
+    const hasError = results.some((result) => !result.success);
+
+    if (hasError) {
+      setSettingsMessage("Some settings failed to save. Please retry.");
+      return;
+    }
+
     setSettingsMessage("System settings saved successfully.");
     addActivity("Updated system settings");
+    adminData.loadSettings();
   };
 
   const viewCtx = {
@@ -1519,6 +2111,10 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     userGrowthData: resolvedUserGrowthData,
     filteredOrders,
     orderStatusClass,
+    onboardingSubmissions: adminData.onboardingSubmissions,
+    onboardingLoading: adminData.onboardingLoading,
+    loadOnboardingSubmissions: adminData.loadOnboardingSubmissions,
+    createFormationFromOnboarding: adminData.createFormationFromOnboarding,
     recentSignupUsers: resolvedRecentSignupUsers,
     pendingRequestItems: resolvedPendingRequestItems,
     activityLogs,
@@ -1560,7 +2156,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     paymentStatus,
     setPaymentStatus,
     filteredPayments,
-    userRecords,
+    userRecords: liveUsers ?? userRecords,
     refundPayment,
     addActivity,
     planForm,
@@ -1596,6 +2192,14 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     setCmsSection,
     filteredCmsRecords,
     updateCmsRecord,
+    blogs,
+    createBlog: adminData.createBlog,
+    updateBlog: adminData.updateBlog,
+    deleteBlog: adminData.deleteBlog,
+    services: adminData.services,
+    createService: adminData.createService,
+    updateService: adminData.updateService,
+    deleteService: adminData.deleteService,
     revenueByCountry,
     servicePopularity,
     payments,
@@ -1609,7 +2213,6 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     setContentQ,
     contentStage,
     setContentStage,
-    contentQueue,
     contentClass,
     documentQ,
     setDocumentQ,
@@ -1812,6 +2415,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             {activeView === "overview" ? <OverviewView ctx={viewCtx} /> : null}
             {activeView === "users" ? <UsersView ctx={viewCtx} /> : null}
             {activeView === "orders" ? <OrdersView ctx={viewCtx} /> : null}
+            {activeView === "onboarding" ? <OnboardingView ctx={viewCtx} /> : null}
             {activeView === "formations" ? <FormationsView ctx={viewCtx} /> : null}
             {activeView === "payments" ? <PaymentsView ctx={viewCtx} /> : null}
             {activeView === "subscriptions" ? <SubscriptionsView ctx={viewCtx} /> : null}
@@ -1824,6 +2428,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             {activeView === "services" ? <ServicesView ctx={viewCtx} /> : null}
             {activeView === "documents" ? <DocumentsView ctx={viewCtx} /> : null}
             {activeView === "quickbooks" ? <QuickbooksView ctx={viewCtx} /> : null}
+            {activeView === "taxes" ? <TaxesView ctx={viewCtx} /> : null}
             {activeView === "compliance" ? <ComplianceView ctx={viewCtx} /> : null}
 
             <ClientDocumentsModal ctx={viewCtx} />

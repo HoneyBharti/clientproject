@@ -13,7 +13,7 @@ export default function PricingPage() {
 
   const handleSelectPlan = (plan) => {
     router.push(
-      `/checkout?planName=${plan.name}&amount=${plan.price}&state=${selectedState}&entityType=${selectedEntity}&country=USA`
+      `/onboarding?planName=${plan.name}&amount=${plan.price}&state=${selectedState}&entityType=${selectedEntity}&country=USA`
     );
   };
 

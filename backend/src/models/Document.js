@@ -53,6 +53,12 @@ const documentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    taxFiling: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TaxFiling',
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,7 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { AdminViewContext } from "./types";
 
 export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
-  const { formationQ, setFormationQ, formationStage, setFormationStage, filteredFormations, updateFormationStage } = ctx;
+  const { formationQ, setFormationQ, formationStage, setFormationStage, filteredFormations, updateFormationStage, updateFormationEin } = ctx;
+  const [einDrafts, setEinDrafts] = useState<Record<string, string>>({});
+
+  const getEinValue = (formation: any) =>
+    einDrafts[formation.id] ?? formation.ein ?? "";
 
   return (
     <Card>
@@ -43,6 +48,7 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
               <TableHead>Type</TableHead>
               <TableHead>User</TableHead>
               <TableHead>Jurisdiction</TableHead>
+              <TableHead>EIN</TableHead>
               <TableHead>Assigned Agent</TableHead>
               <TableHead>Stage</TableHead>
             </TableRow>
@@ -55,6 +61,17 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
                 <TableCell>{formation.formationType}</TableCell>
                 <TableCell>{formation.userId}</TableCell>
                 <TableCell>{formation.jurisdiction}</TableCell>
+                <TableCell>
+                  <Input
+                    value={getEinValue(formation)}
+                    placeholder="EIN"
+                    className="h-8 w-[160px] font-mono"
+                    onChange={(e) =>
+                      setEinDrafts((prev) => ({ ...prev, [formation.id]: e.target.value }))
+                    }
+                    onBlur={() => updateFormationEin?.(formation.id, getEinValue(formation))}
+                  />
+                </TableCell>
                 <TableCell>{formation.assignedAgent}</TableCell>
                 <TableCell>
                   <Select value={formation.stage} onValueChange={(value) => updateFormationStage(formation.id, value as any)}>

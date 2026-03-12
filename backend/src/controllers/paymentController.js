@@ -53,53 +53,88 @@ exports.createPaymentIntent = async (req, res) => {
 
 exports.createCheckoutSession = async (req, res) => {
   try {
-    const { amount, plan, country, state, entityType, email, name } = req.body;
+    const { amount, plan, country, state, entityType, serviceType } = req.body;
+    const numericAmount = Number(amount);
 
-    // BYPASS MODE - Skip Stripe and create fake session
-    const fakeSessionId = 'cs_test_' + Date.now();
-    const fakeUrl = `${process.env.FRONTEND_URL}/dashboard?payment=success&session_id=${fakeSessionId}`;
-
-    // If user is authenticated, update their plan immediately
-    if (req.user) {
-      await User.findByIdAndUpdate(req.user._id, {
-        servicePlan: plan,
-        status: 'active',
-        subscriptionStatus: 'active'
-      });
-
-      const payment = await Payment.create({
-        user: req.user._id,
-        stripePaymentId: fakeSessionId,
-        amount,
-        plan,
-        status: 'succeeded',
-        metadata: {
-          country: country || 'USA',
-          state: state || 'Wyoming',
-          entityType: entityType || 'LLC'
-        }
-      });
-
-      const existingOrder = await Order.findOne({ payment: payment._id });
-      if (!existingOrder) {
-        await Order.create({
-          user: req.user._id,
-          orderNumber: generateOrderNumber(),
-          serviceType: req.body?.serviceType || 'formation',
-          plan,
-          status: 'pending',
-          amount,
-          payment: payment._id,
-          metadata: {
-            country: country || 'USA',
-            state: state || 'Wyoming',
-            entityType: entityType || 'LLC'
-          }
-        });
-      }
+    if (!numericAmount || Number.isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ message: 'Amount is required.' });
     }
 
-    res.json({ success: true, sessionId: fakeSessionId, url: fakeUrl });
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required.' });
+    }
+
+    if (!req.user.stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: req.user.email,
+        name: req.user.name,
+      });
+      await User.findByIdAndUpdate(req.user._id, { stripeCustomerId: customer.id });
+      req.user.stripeCustomerId = customer.id;
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: req.user.stripeCustomerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: 'usd',
+            unit_amount: Math.round(numericAmount * 100),
+            product_data: {
+              name: `${plan || 'Service'} ${entityType || ''}`.trim(),
+              description: `${country || 'USA'} • ${state || 'Unknown'} • ${entityType || 'LLC'}`,
+            },
+          },
+        },
+      ],
+      metadata: {
+        userId: req.user._id.toString(),
+        plan: plan || '',
+        country: country || 'USA',
+        state: state || 'Unknown',
+        entityType: entityType || 'LLC',
+        serviceType: serviceType || 'formation',
+      },
+      success_url: `${process.env.FRONTEND_URL}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/checkout?planName=${encodeURIComponent(plan || '')}&state=${encodeURIComponent(state || '')}&entityType=${encodeURIComponent(entityType || '')}&country=${encodeURIComponent(country || 'USA')}`,
+    });
+
+    const payment = await Payment.create({
+      user: req.user._id,
+      stripePaymentId: session.id,
+      amount: numericAmount,
+      plan,
+      status: 'pending',
+      metadata: {
+        country: country || 'USA',
+        state: state || 'Unknown',
+        entityType: entityType || 'LLC',
+        checkoutSessionId: session.id,
+      },
+    });
+
+    const existingOrder = await Order.findOne({ payment: payment._id });
+    if (!existingOrder) {
+      await Order.create({
+        user: req.user._id,
+        orderNumber: generateOrderNumber(),
+        serviceType: serviceType || 'formation',
+        plan,
+        status: 'pending',
+        amount: numericAmount,
+        payment: payment._id,
+        metadata: {
+          country: country || 'USA',
+          state: state || 'Unknown',
+          entityType: entityType || 'LLC',
+        },
+      });
+    }
+
+    res.json({ success: true, sessionId: session.id, url: session.url });
   } catch (error) {
     console.error('Checkout session error:', error);
     res.status(500).json({ message: error.message });
@@ -145,8 +180,9 @@ exports.handleWebhook = async (req, res) => {
 };
 
 async function handleCheckoutComplete(session) {
-  const userId = session.metadata.userId;
-  const plan = session.metadata.plan;
+  const userId = session.metadata?.userId;
+  const plan = session.metadata?.plan;
+  const sessionId = session.id;
 
   // Only update user if authenticated (not guest)
   if (userId && userId !== 'guest') {
@@ -156,18 +192,33 @@ async function handleCheckoutComplete(session) {
       subscriptionStatus: 'active'
     });
 
-    await Payment.create({
-      user: userId,
-      stripePaymentId: session.payment_intent,
-      amount: session.amount_total / 100,
-      plan,
-      status: 'succeeded',
-      metadata: {
-        country: session.metadata.country,
-        state: session.metadata.state,
-        entityType: session.metadata.entityType
-      }
-    });
+    const payment = await Payment.findOne({ stripePaymentId: sessionId });
+    if (payment) {
+      payment.status = 'succeeded';
+      payment.amount = (session.amount_total || 0) / 100;
+      payment.metadata = {
+        ...(payment.metadata || {}),
+        country: session.metadata?.country,
+        state: session.metadata?.state,
+        entityType: session.metadata?.entityType,
+        paymentIntentId: session.payment_intent,
+      };
+      await payment.save();
+    } else {
+      await Payment.create({
+        user: userId,
+        stripePaymentId: sessionId,
+        amount: (session.amount_total || 0) / 100,
+        plan,
+        status: 'succeeded',
+        metadata: {
+          country: session.metadata?.country,
+          state: session.metadata?.state,
+          entityType: session.metadata?.entityType,
+          paymentIntentId: session.payment_intent,
+        },
+      });
+    }
   } else {
     // Guest checkout - just log the payment
     console.log('Guest payment completed:', session.id);

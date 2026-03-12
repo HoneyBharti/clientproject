@@ -98,6 +98,18 @@ const getDueDatesForRule = (rule, formation) => {
   return getNextAnnualDate(rule, formation);
 };
 
+const toDateKey = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString().slice(0, 10);
+};
+
+const getRuleDedupeKey = (rule, dueDate) => {
+  const name = rule?.name || '';
+  const jurisdiction = rule?.jurisdiction || '';
+  const state = rule?.state || '';
+  return `${name}|${jurisdiction}|${state}|${toDateKey(dueDate)}`;
+};
+
 const createComplianceNotification = async (userId, title, message, metadata = {}) => {
   if (!userId) return;
   await Notification.create({
@@ -116,12 +128,21 @@ const generateComplianceEventsForFormation = async (formation) => {
   const rules = await ComplianceRule.find({ isActive: true });
   const now = new Date();
   const createdEvents = [];
+  const existingEvents = await ComplianceEvent.find({ company: formation._id })
+    .populate('rule', 'name jurisdiction state')
+    .select('rule dueDate')
+    .lean();
+  const existingKeys = new Set(
+    existingEvents.map((event) => getRuleDedupeKey(event.rule, event.dueDate))
+  );
 
   for (const rule of rules) {
     if (!matchesRule(rule, formation)) continue;
     const dueDates = getDueDatesForRule(rule, formation);
 
     for (const dueDate of dueDates) {
+      const dedupeKey = getRuleDedupeKey(rule, dueDate);
+      if (existingKeys.has(dedupeKey)) continue;
       const existing = await ComplianceEvent.findOne({
         company: formation._id,
         rule: rule._id,
@@ -138,6 +159,7 @@ const generateComplianceEventsForFormation = async (formation) => {
         status,
       });
       createdEvents.push(event);
+      existingKeys.add(dedupeKey);
 
       if (rule.createTaxFiling) {
         const taxYear = String(dueDate.getFullYear());

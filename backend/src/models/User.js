@@ -28,7 +28,7 @@ const userSchema = new mongoose.Schema({
   companyName: String,
   region: {
     type: String,
-    enum: ['USA', 'UK', 'UAE', 'Singapore', 'India', 'Australia', 'Netherlands']
+    enum: ['USA', 'UK', 'UAE', 'Singapore', 'India', 'Australia', 'Netherlands', 'SaudiArabia']
   },
   servicePlan: {
     type: String,

@@ -120,6 +120,7 @@ type FormationRecord = {
   jurisdiction: string;
   stage: FormationStage;
   assignedAgent: string;
+  ein?: string;
 };
 
 type PaymentRecord = {
@@ -1052,6 +1053,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       jurisdiction: formation.state || "N/A",
       stage: mapFormationStatusFromBackend(formation.status),
       assignedAgent: formation.assignedTo?.name || "Unassigned",
+      ein: formation.ein || "",
     }));
 
     setFormations(mapped);
@@ -1931,6 +1933,14 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     }
   };
 
+  const updateFormationEin = async (formationId: string, ein: string) => {
+    const trimmed = ein.trim();
+    const result = await adminData.updateFormation(formationId, { ein: trimmed });
+    if (result.success) {
+      addActivity(`Formation ${formationId} EIN updated`);
+    }
+  };
+
   const refundPayment = (paymentId: string) => {
     setPayments((prev) => prev.map((payment) => (payment.id === paymentId ? { ...payment, status: "refunded" } : payment)));
     addActivity(`Refunded payment ${paymentId}`);
@@ -2153,6 +2163,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     setFormationStage,
     filteredFormations,
     updateFormationStage,
+    updateFormationEin,
     paymentStatus,
     setPaymentStatus,
     filteredPayments,

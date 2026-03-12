@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Payment = require('../models/Payment');
+const OnboardingSubmission = require('../models/OnboardingSubmission');
 
 const MONTH_LABEL = new Intl.DateTimeFormat('en-US', { month: 'short' });
 
@@ -20,9 +21,82 @@ const toMonthKey = (value) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 };
 
+const normalizeRegion = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  if (normalized === 'ExistingCompliance') return null;
+  const map = {
+    US: 'USA',
+    USA: 'USA',
+    'United States': 'USA',
+    UK: 'UK',
+    'U.K.': 'UK',
+    'United Kingdom': 'UK',
+    UAE: 'UAE',
+    Dubai: 'UAE',
+    'United Arab Emirates': 'UAE',
+    India: 'India',
+    Singapore: 'Singapore',
+    Australia: 'Australia',
+    Netherlands: 'Netherlands',
+    SaudiArabia: 'SaudiArabia',
+    'Saudi Arabia': 'SaudiArabia',
+  };
+  return map[normalized] || normalized;
+};
+
+const resolveSubmissionRegion = (submission) => {
+  const form = submission?.formData || {};
+  return normalizeRegion(
+    submission?.planCountry ||
+      submission?.destination ||
+      form.existingCompany?.country ||
+      form.state ||
+      form.freeZone
+  );
+};
+
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password').sort('-createdAt');
+    const missingRegionUsers = users.filter((user) => !user.region);
+
+    if (missingRegionUsers.length) {
+      const userIds = missingRegionUsers.map((user) => user._id);
+      const submissions = await OnboardingSubmission.find({ user: { $in: userIds } })
+        .select('user planCountry destination formData createdAt')
+        .sort('-createdAt')
+        .lean();
+
+      const latestByUser = new Map();
+      submissions.forEach((submission) => {
+        const userId = String(submission.user);
+        if (!latestByUser.has(userId)) {
+          latestByUser.set(userId, submission);
+        }
+      });
+
+      const updates = [];
+      missingRegionUsers.forEach((user) => {
+        const submission = latestByUser.get(String(user._id));
+        const resolvedRegion = resolveSubmissionRegion(submission);
+        if (resolvedRegion) {
+          user.region = resolvedRegion;
+          updates.push({
+            updateOne: {
+              filter: { _id: user._id },
+              update: { region: resolvedRegion },
+            },
+          });
+        }
+      });
+
+      if (updates.length) {
+        await User.bulkWrite(updates);
+      }
+    }
+
     res.json({ success: true, users });
   } catch (error) {
     res.status(500).json({ message: error.message });

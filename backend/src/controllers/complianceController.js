@@ -83,7 +83,21 @@ exports.getMyComplianceEvents = async (req, res) => {
       .populate('rule', 'name description jurisdiction state frequency')
       .sort('dueDate');
 
-    res.json({ success: true, events });
+    const deduped = [];
+    const seen = new Set();
+    for (const event of events) {
+      const dateKey = event.dueDate ? new Date(event.dueDate).toISOString().slice(0, 10) : '';
+      const companyId = event.company?._id ? String(event.company._id) : '';
+      const ruleName = event.rule?.name || '';
+      const jurisdiction = event.rule?.jurisdiction || '';
+      const state = event.rule?.state || '';
+      const key = `${companyId}|${ruleName}|${jurisdiction}|${state}|${dateKey}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(event);
+    }
+
+    res.json({ success: true, events: deduped });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

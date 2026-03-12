@@ -1,6 +1,43 @@
 const OnboardingSubmission = require('../models/OnboardingSubmission');
 const Formation = require('../models/Formation');
+const User = require('../models/User');
 const { generateComplianceEventsForFormation } = require('../utils/complianceService');
+
+const normalizeRegion = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  if (normalized === 'ExistingCompliance') return null;
+  const map = {
+    US: 'USA',
+    USA: 'USA',
+    'United States': 'USA',
+    UK: 'UK',
+    'U.K.': 'UK',
+    'United Kingdom': 'UK',
+    UAE: 'UAE',
+    Dubai: 'UAE',
+    'United Arab Emirates': 'UAE',
+    India: 'India',
+    Singapore: 'Singapore',
+    Australia: 'Australia',
+    Netherlands: 'Netherlands',
+    SaudiArabia: 'SaudiArabia',
+    'Saudi Arabia': 'SaudiArabia',
+  };
+  return map[normalized] || normalized;
+};
+
+const resolveSubmissionRegion = ({ planCountry, destination, formData }) => {
+  const form = formData || {};
+  return normalizeRegion(
+    planCountry ||
+      destination ||
+      form.existingCompany?.country ||
+      form.state ||
+      form.freeZone
+  );
+};
 
 exports.createOnboardingSubmission = async (req, res) => {
   try {
@@ -16,6 +53,11 @@ exports.createOnboardingSubmission = async (req, res) => {
       entityType,
       formData,
     });
+
+    const resolvedRegion = resolveSubmissionRegion({ planCountry, destination, formData });
+    if (resolvedRegion) {
+      await User.findByIdAndUpdate(req.user._id, { region: resolvedRegion });
+    }
 
     res.status(201).json({ success: true, submissionId: submission._id });
   } catch (error) {
@@ -104,6 +146,15 @@ exports.createFormationFromOnboarding = async (req, res) => {
       status: 'pending',
       notes: submission.destination === 'ExistingCompliance' ? 'Created from onboarding (existing company).' : 'Created from onboarding.',
     });
+
+    const resolvedRegion = resolveSubmissionRegion({
+      planCountry: submission.planCountry,
+      destination: submission.destination,
+      formData: submission.formData,
+    });
+    if (resolvedRegion) {
+      await User.findByIdAndUpdate(submission.user, { region: resolvedRegion });
+    }
 
     await generateComplianceEventsForFormation(formation);
 

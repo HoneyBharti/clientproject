@@ -30,20 +30,6 @@ function CheckoutPageContent() {
         'Elite': { title: 'Elite', price: 3588 },
     };
     
-    const paymentLinks = {
-        'Micro-Delaware-LLC': 'https://buy.stripe.com/cNi6oH9356vv1XlgOz',
-        'Micro-Delaware-C-Corp': 'https://buy.stripe.com/cNi6oH9356vv1XlgOz',
-        'Micro-Wyoming-LLC': 'https://buy.stripe.com/8x2fZh3IL3jjgSfcyj',
-        'Micro-Wyoming-C-Corp': 'https://buy.stripe.com/8x2fZh3IL3jjgSfcyj',
-        'Vitals-Delaware-LLC': 'https://buy.stripe.com/4gM9ATenp5rrcBZ55R',
-        'Vitals-Delaware-C-Corp': 'https://buy.stripe.com/14A14nfrtcTTbxV55S',
-        'Vitals-Wyoming-LLC': 'https://buy.stripe.com/dRm6oHbbddXX6dB0PC',
-        'Vitals-Wyoming-C-Corp': 'https://buy.stripe.com/dRm6oHbbddXX6dB0PD',
-        'Elite-Delaware-LLC': 'https://buy.stripe.com/cNi6oHa791bb31p1TJ',
-        'Elite-Delaware-C-Corp': 'https://buy.stripe.com/4gM3cvbbdbPP0Th2XL',
-        'Elite-Wyoming-LLC': 'https://buy.stripe.com/dRmdR95QT8DDcBZcyo',
-        'Elite-Wyoming-C-Corp': 'https://buy.stripe.com/dRmdR95QT8DDcBZcyp',
-    };
     
     if (!planName || !state || !entityType) {
         return (
@@ -81,9 +67,6 @@ function CheckoutPageContent() {
         totalDueToday += annualStateFee;
     }
     
-    const paymentKey = `${planName}-${state}-${entityType}`;
-    const paymentLink = paymentLinks[paymentKey] || '#';
-
     return (
         <div className="min-h-screen bg-gray-50 font-inter">
             <NavHeader onLoginClick={() => router.push('/login')} onSignupClick={() => router.push('/signup')} />
@@ -172,15 +155,11 @@ function CheckoutPageContent() {
                                             }
                                             
                                             const data = await response.json();
-                                            if (data?.url && data.url.includes('/dashboard')) {
-                                                window.location.href = '/dashboard?payment=success';
-                                                return;
-                                            }
                                             if (data?.url) {
                                                 window.location.href = data.url;
                                                 return;
                                             }
-                                            window.location.href = '/dashboard?payment=success';
+                                            alert('Unable to start Stripe checkout. Please try again.');
                                         } catch (error) {
                                             console.error('Payment error:', error);
                                             alert('Payment error. Please try again.');

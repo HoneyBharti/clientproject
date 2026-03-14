@@ -25,7 +25,6 @@ export function UsersView({ ctx }: { ctx: AdminViewContext }) {
     qbClass,
     clientStatusClass,
     setUserActivation,
-    resetUserPassword,
     userActionMessage,
     selectedUserOrders,
     d,
@@ -173,9 +172,6 @@ export function UsersView({ ctx }: { ctx: AdminViewContext }) {
                 >
                   Deactivate Account
                 </Button>
-                <Button size="sm" variant="outline" onClick={resetUserPassword} disabled={!selected}>
-                  Reset Password
-                </Button>
                 <Button size="sm" variant="outline" onClick={() => selected && openUserDocumentModal(selected.id)} disabled={!selected}>
                   View Documents
                 </Button>
@@ -228,7 +224,7 @@ export function UsersView({ ctx }: { ctx: AdminViewContext }) {
                         {selectedUserPayments.slice(0, 3).map((payment: any) => (
                           <div key={payment.id} className="rounded border p-2 text-sm">
                             <p className="font-medium">{payment.plan} - ${payment.amount}</p>
-                            <p className="text-xs text-muted-foreground">{payment.stripePaymentId}</p>
+                            <p className="text-xs text-muted-foreground break-all font-mono">{payment.stripePaymentId}</p>
                           </div>
                         ))}
                       </div>

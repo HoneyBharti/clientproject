@@ -1806,21 +1806,6 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     addActivity(activate ? `Activated user ${targetUser.name}` : `Deactivated user ${targetUser.name}`);
   };
 
-  const resetUserPassword = () => {
-    const targetUser = liveUsers ? selectedUserForUsersView : selected;
-
-    if (!targetUser) {
-      setUserActionMessage("Select a user first.");
-      return;
-    }
-    if (liveUsers) {
-      setUserActionMessage("Password reset endpoint is not configured in the backend yet.");
-      return;
-    }
-    setUserActionMessage(`Password reset email sent to ${targetUser.email}.`);
-    addActivity(`Sent password reset to ${targetUser.email}`);
-  };
-
   const selectUser = (userId: string) => {
     setSelectedId(userId);
     setUserActionMessage("");
@@ -2218,7 +2203,6 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     qbClass,
     clientStatusClass,
     setUserActivation,
-    resetUserPassword,
     userActionMessage,
     selectedUserOrders,
     selectedUserPayments,

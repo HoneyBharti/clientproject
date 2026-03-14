@@ -126,17 +126,46 @@ const resolveState = (submission) => {
 };
 
 exports.createFormationFromOnboarding = async (req, res) => {
-  try {
-    const submission = await OnboardingSubmission.findById(req.params.id);
-    if (!submission) {
-      return res.status(404).json({ message: 'Onboarding submission not found' });
-    }
+  let submission;
+  let formation;
 
-    if (submission.formation) {
+  try {
+    const now = new Date();
+    submission = await OnboardingSubmission.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        $or: [{ formation: { $exists: false } }, { formation: null }],
+        status: { $nin: ['processing', 'completed'] },
+      },
+      {
+        $set: {
+          status: 'processing',
+          reviewedBy: req.user._id,
+          reviewedAt: now,
+        },
+      },
+      { new: true }
+    );
+
+    if (!submission) {
+      const existing = await OnboardingSubmission.findById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Onboarding submission not found' });
+      }
+      if (existing.formation) {
+        return res.status(200).json({
+          success: true,
+          formationId: existing.formation,
+          message: 'Formation already created for this submission.',
+        });
+      }
+      if (existing.status === 'processing') {
+        return res.status(409).json({ message: 'Formation creation already in progress.' });
+      }
       return res.status(400).json({ message: 'Formation already created for this submission.' });
     }
 
-    const formation = await Formation.create({
+    formation = await Formation.create({
       user: submission.user,
       companyName: resolveCompanyName(submission),
       entityType: resolveEntityType(submission),
@@ -161,11 +190,25 @@ exports.createFormationFromOnboarding = async (req, res) => {
     submission.status = 'completed';
     submission.formation = formation._id;
     submission.reviewedBy = req.user._id;
-    submission.reviewedAt = new Date();
+    submission.reviewedAt = submission.reviewedAt || now;
     await submission.save();
 
     res.status(201).json({ success: true, formationId: formation._id });
   } catch (error) {
+    if (submission) {
+      if (formation) {
+        await OnboardingSubmission.findByIdAndUpdate(submission._id, {
+          $set: {
+            formation: formation._id,
+            status: 'completed',
+            reviewedBy: req.user._id,
+            reviewedAt: submission.reviewedAt || new Date(),
+          },
+        });
+      } else {
+        await OnboardingSubmission.findByIdAndUpdate(submission._id, { $set: { status: 'submitted' } });
+      }
+    }
     res.status(500).json({ message: error.message });
   }
 };

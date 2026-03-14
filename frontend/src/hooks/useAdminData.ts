@@ -17,49 +17,64 @@ import {
   zohoAPI,
 } from '@/lib/admin-api';
 
+const adminDataCache = {
+  activityLogs: [] as any[],
+  blogs: [] as any[],
+  formations: [] as any[],
+  orders: [] as any[],
+  tickets: [] as any[],
+  services: [] as any[],
+  settings: [] as any[],
+  emails: [] as any[],
+  complianceData: null as any,
+  onboardingSubmissions: [] as any[],
+  zohoLeads: [] as any[],
+};
+
 export function useAdminData() {
+  const cache = adminDataCache;
   // Activity Logs
-  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [activityLogs, setActivityLogs] = useState<any[]>(cache.activityLogs);
   const [activityLoading, setActivityLoading] = useState(false);
 
   // Blogs
-  const [blogs, setBlogs] = useState<any[]>([]);
+  const [blogs, setBlogs] = useState<any[]>(cache.blogs);
   const [blogsLoading, setBlogsLoading] = useState(false);
 
   // Formations
-  const [formations, setFormations] = useState<any[]>([]);
+  const [formations, setFormations] = useState<any[]>(cache.formations);
   const [formationsLoading, setFormationsLoading] = useState(false);
 
   // Orders
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>(cache.orders);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   // Tickets
-  const [tickets, setTickets] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>(cache.tickets);
   const [ticketsLoading, setTicketsLoading] = useState(false);
 
   // Services
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>(cache.services);
   const [servicesLoading, setServicesLoading] = useState(false);
 
   // Settings
-  const [settings, setSettings] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any[]>(cache.settings);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   // Emails
-  const [emails, setEmails] = useState<any[]>([]);
+  const [emails, setEmails] = useState<any[]>(cache.emails);
   const [emailsLoading, setEmailsLoading] = useState(false);
 
   // Compliance
-  const [complianceData, setComplianceData] = useState<any>(null);
+  const [complianceData, setComplianceData] = useState<any>(cache.complianceData);
   const [complianceLoading, setComplianceLoading] = useState(false);
 
   // Onboarding
-  const [onboardingSubmissions, setOnboardingSubmissions] = useState<any[]>([]);
+  const [onboardingSubmissions, setOnboardingSubmissions] = useState<any[]>(cache.onboardingSubmissions);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
 
   // Zoho Leads
-  const [zohoLeads, setZohoLeads] = useState<any[]>([]);
+  const [zohoLeads, setZohoLeads] = useState<any[]>(cache.zohoLeads);
   const [zohoLeadsLoading, setZohoLeadsLoading] = useState(false);
   const [zohoLeadsError, setZohoLeadsError] = useState<string | null>(null);
 
@@ -68,7 +83,9 @@ export function useAdminData() {
     setActivityLoading(true);
     try {
       const data = await activityLogsAPI.getAll({ limit: 100 });
-      setActivityLogs(data.logs || []);
+      const logs = data.logs || [];
+      adminDataCache.activityLogs = logs;
+      setActivityLogs(logs);
     } catch (error) {
       console.error('Failed to load activity logs:', error);
       setActivityLogs([]);
@@ -82,7 +99,9 @@ export function useAdminData() {
     setBlogsLoading(true);
     try {
       const data = await blogsAPI.getAll({ limit: 100 });
-      setBlogs(data.blogs || []);
+      const nextBlogs = data.blogs || [];
+      adminDataCache.blogs = nextBlogs;
+      setBlogs(nextBlogs);
     } catch (error) {
       console.error('Failed to load blogs:', error);
       setBlogs([]);
@@ -96,7 +115,9 @@ export function useAdminData() {
     setFormationsLoading(true);
     try {
       const data = await formationsAPI.getAll({ limit: 100 });
-      setFormations(data.formations || []);
+      const nextFormations = data.formations || [];
+      adminDataCache.formations = nextFormations;
+      setFormations(nextFormations);
     } catch (error) {
       console.error('Failed to load formations:', error);
       setFormations([]);
@@ -110,7 +131,9 @@ export function useAdminData() {
     setOrdersLoading(true);
     try {
       const data = await ordersAPI.getAll({ limit: 100 });
-      setOrders(data.orders || []);
+      const nextOrders = data.orders || [];
+      adminDataCache.orders = nextOrders;
+      setOrders(nextOrders);
     } catch (error) {
       console.error('Failed to load orders:', error);
       setOrders([]);
@@ -124,7 +147,9 @@ export function useAdminData() {
     setTicketsLoading(true);
     try {
       const data = await ticketsAPI.getAll({ limit: 100 });
-      setTickets(data.tickets || []);
+      const nextTickets = data.tickets || [];
+      adminDataCache.tickets = nextTickets;
+      setTickets(nextTickets);
     } catch (error) {
       console.error('Failed to load tickets:', error);
       setTickets([]);
@@ -138,7 +163,9 @@ export function useAdminData() {
     setServicesLoading(true);
     try {
       const data = await servicesAPI.getAll();
-      setServices(data.services || []);
+      const nextServices = data.services || [];
+      adminDataCache.services = nextServices;
+      setServices(nextServices);
     } catch (error) {
       console.error('Failed to load services:', error);
       setServices([]);
@@ -152,7 +179,9 @@ export function useAdminData() {
     setSettingsLoading(true);
     try {
       const data = await settingsAPI.getAll();
-      setSettings(data.settings || []);
+      const nextSettings = data.settings || [];
+      adminDataCache.settings = nextSettings;
+      setSettings(nextSettings);
     } catch (error) {
       console.error('Failed to load settings:', error);
       setSettings([]);
@@ -166,7 +195,9 @@ export function useAdminData() {
     setEmailsLoading(true);
     try {
       const data = await emailsAPI.getAll({ limit: 100 });
-      setEmails(data.emails || []);
+      const nextEmails = data.emails || [];
+      adminDataCache.emails = nextEmails;
+      setEmails(nextEmails);
     } catch (error) {
       console.error('Failed to load emails:', error);
       setEmails([]);
@@ -180,6 +211,7 @@ export function useAdminData() {
     setComplianceLoading(true);
     try {
       const data = await complianceAPI.getOverview();
+      adminDataCache.complianceData = data;
       setComplianceData(data);
     } catch (error) {
       console.error('Failed to load compliance data:', error);
@@ -193,7 +225,9 @@ export function useAdminData() {
     setOnboardingLoading(true);
     try {
       const data = await onboardingAPI.getAll();
-      setOnboardingSubmissions(data.submissions || []);
+      const nextSubmissions = data.submissions || [];
+      adminDataCache.onboardingSubmissions = nextSubmissions;
+      setOnboardingSubmissions(nextSubmissions);
     } catch (error) {
       console.error('Failed to load onboarding submissions:', error);
       setOnboardingSubmissions([]);
@@ -207,7 +241,9 @@ export function useAdminData() {
     setZohoLeadsError(null);
     try {
       const data = await zohoAPI.getLeads();
-      setZohoLeads(data.leads || []);
+      const nextLeads = data.leads || [];
+      adminDataCache.zohoLeads = nextLeads;
+      setZohoLeads(nextLeads);
     } catch (error) {
       console.error('Failed to load Zoho leads:', error);
       setZohoLeads([]);

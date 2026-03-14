@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ export function OnboardingView({ ctx }: { ctx: AdminViewContext }) {
     loadOnboardingSubmissions,
     createFormationFromOnboarding,
   } = ctx;
+  const [creatingIds, setCreatingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadOnboardingSubmissions?.();
@@ -60,9 +61,11 @@ export function OnboardingView({ ctx }: { ctx: AdminViewContext }) {
                 "New Company";
               const country = submission.planCountry || submission.destination || submission.formData?.existingCompany?.country || "USA";
               const entity = submission.entityType || submission.planEntityType || submission.formData?.existingCompany?.entityType || "LLC";
-              const canCreate = !submission.formation && submission.status !== "completed";
+              const submissionId = String(submission._id || submission.id);
+              const isProcessing = submission.status === "processing" || creatingIds.has(submissionId);
+              const canCreate = !submission.formation && submission.status !== "completed" && !isProcessing;
               return (
-                <TableRow key={submission._id || submission.id}>
+                <TableRow key={submissionId}>
                   <TableCell className="font-medium">{companyName}</TableCell>
                   <TableCell>{submission.user?.name || "Unknown user"}</TableCell>
                   <TableCell>{submission.plan || "-"}</TableCell>
@@ -74,9 +77,25 @@ export function OnboardingView({ ctx }: { ctx: AdminViewContext }) {
                     <Button
                       size="sm"
                       disabled={!canCreate}
-                      onClick={() => createFormationFromOnboarding?.(submission._id || submission.id)}
+                      onClick={async () => {
+                        if (!canCreate) return;
+                        setCreatingIds((prev) => new Set(prev).add(submissionId));
+                        try {
+                          await createFormationFromOnboarding?.(submissionId);
+                        } finally {
+                          setCreatingIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(submissionId);
+                            return next;
+                          });
+                        }
+                      }}
                     >
-                      {submission.formation ? "Formation Created" : "Create Formation"}
+                      {submission.formation
+                        ? "Formation Created"
+                        : isProcessing
+                          ? "Creating..."
+                          : "Create Formation"}
                     </Button>
                   </TableCell>
                 </TableRow>

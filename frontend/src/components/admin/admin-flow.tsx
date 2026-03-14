@@ -94,6 +94,17 @@ type TicketPriority = "low" | "medium" | "high" | "urgent";
 type PlanBilling = "one_time" | "monthly";
 type CmsSection = "pricing" | "country_service" | "faq" | "blog" | "landing";
 
+const adminUsersCache: {
+  users: LiveAdminUser[] | null;
+  payments: LiveAdminPayment[] | null;
+  loadedAt: number;
+} = {
+  users: null,
+  payments: null,
+  loadedAt: 0,
+};
+const ADMIN_USERS_CACHE_TTL = 30 * 1000;
+
 type OrderRecord = {
   id: string;
   userId: string;
@@ -751,8 +762,8 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   const [dashboardPayload, setDashboardPayload] = useState<DashboardPayload | null>(null);
   const [isDashboardMetricsLoading, setIsDashboardMetricsLoading] = useState(true);
   const [dashboardMetricsError, setDashboardMetricsError] = useState("");
-  const [liveUsers, setLiveUsers] = useState<LiveAdminUser[] | null>(null);
-  const [livePayments, setLivePayments] = useState<LiveAdminPayment[]>([]);
+  const [liveUsers, setLiveUsers] = useState<LiveAdminUser[] | null>(adminUsersCache.users);
+  const [livePayments, setLivePayments] = useState<LiveAdminPayment[]>(adminUsersCache.payments || []);
   const [liveUserDocuments, setLiveUserDocuments] = useState<Record<string, LiveAdminDocument[]>>({});
   const [isUsersDataLoading, setIsUsersDataLoading] = useState(true);
   const [usersDataError, setUsersDataError] = useState("");
@@ -993,6 +1004,14 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     setIsUsersDataLoading(true);
     setUsersDataError("");
 
+    const now = Date.now();
+    if (adminUsersCache.users && now - adminUsersCache.loadedAt < ADMIN_USERS_CACHE_TTL) {
+      setLiveUsers(adminUsersCache.users);
+      setLivePayments(adminUsersCache.payments || []);
+      setIsUsersDataLoading(false);
+      return;
+    }
+
     try {
       const [usersResponse, paymentsResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/admin/users`, {
@@ -1026,6 +1045,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       }));
 
       setLiveUsers(normalizedUsers);
+      adminUsersCache.users = normalizedUsers;
 
       if (paymentsResponse.ok && paymentsData?.success) {
         const normalizedPayments: LiveAdminPayment[] = (paymentsData.payments || []).map((payment: any) => ({
@@ -1039,13 +1059,19 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
           metadata: payment.metadata || {},
         }));
         setLivePayments(normalizedPayments);
+        adminUsersCache.payments = normalizedPayments;
       } else {
         setLivePayments([]);
+        adminUsersCache.payments = [];
       }
+
+      adminUsersCache.loadedAt = Date.now();
     } catch (error) {
       setLiveUsers(null);
       setLivePayments([]);
       setUsersDataError(error instanceof Error ? error.message : "Unable to load users from backend.");
+      adminUsersCache.users = null;
+      adminUsersCache.payments = [];
     } finally {
       setIsUsersDataLoading(false);
     }

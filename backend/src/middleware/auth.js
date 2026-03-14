@@ -21,6 +21,13 @@ exports.protect = async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ message: 'User not found' });
     }
+
+    // Check if user is deactivated (except for admins)
+    if (req.user.role !== 'admin' && (req.user.status === 'paused' || req.user.status === 'closed')) {
+      return res.status(403).json({ 
+        message: 'Your account has been deactivated. Please contact support for assistance.' 
+      });
+    }
     
     next();
   } catch (error) {

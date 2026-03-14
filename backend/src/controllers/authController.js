@@ -65,6 +65,13 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Check if user is deactivated
+    if (user.status === 'paused' || user.status === 'closed') {
+      return res.status(403).json({ 
+        message: 'Your account has been deactivated. Please contact support for assistance.' 
+      });
+    }
+
     const token = generateToken(user._id);
     req.session.token = token;
     req.session.userId = user._id;

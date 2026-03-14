@@ -142,7 +142,7 @@ const FinancialSnapshot = ({ isQuickBooksLinked, data, isLoading, lastSyncAt }) 
                 </div>
                 {isQuickBooksLinked && (
                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={80} height={15} />
+                        <Image src="/logo.png" alt="Yourlegal" width={80} height={15} />
                     </div>
                 )}
             </div>
@@ -687,11 +687,15 @@ const Timeline = ({ title, steps }) => (
     </div>
 );
 
-const CompanySection = ({ userId, formations, documents, isLoading }) => {
-    const [complianceEvents, setComplianceEvents] = useState([]);
-    const [complianceLoading, setComplianceLoading] = useState(false);
-    const [complianceError, setComplianceError] = useState("");
+const FormationProgressTimeline = ({ steps }) => <Timeline title="Formation Progress" steps={steps} />;
+const EinProgressTimeline = ({ steps }) => <Timeline title="EIN Application & Allotment" steps={steps} />;
+const ComplianceSetupTimeline = ({ steps }) => <Timeline title="Initial Compliance Setup" steps={steps} />;
 
+const CompanySection = ({ userId, formations, documents, isLoading }) => {
+    const [progressData, setProgressData] = useState<any | null>(null);
+    const [progressLoading, setProgressLoading] = useState(false);
+    const [progressError, setProgressError] = useState("");
+    const { toast } = useToast();
     const company = useMemo(() => {
         if (!formations || formations.length === 0) return null;
         const sorted = [...formations].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
@@ -699,60 +703,205 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
     }, [formations]);
 
     useEffect(() => {
-        if (!userId) return;
-        setComplianceLoading(true);
-        setComplianceError("");
-        fetch(`${API_BASE_URL}/compliance/events/me`, { credentials: 'include' })
+        if (!company?._id && !company?.id) return;
+        const formationId = company?._id || company?.id;
+        setProgressLoading(true);
+        setProgressError("");
+        fetch(`${API_BASE_URL}/company/${formationId}/progress`, { credentials: 'include' })
             .then((res) => res.json().catch(() => null))
             .then((data) => {
                 if (!data?.success) {
-                    throw new Error(data?.message || 'Unable to load compliance events.');
+                    throw new Error(data?.message || "Unable to load progress.");
                 }
-                setComplianceEvents(data.events || []);
+                setProgressData(data);
             })
             .catch((error) => {
-                setComplianceError(error instanceof Error ? error.message : 'Unable to load compliance events.');
-                setComplianceEvents([]);
+                setProgressError(error instanceof Error ? error.message : "Unable to load progress.");
+                setProgressData(null);
             })
-            .finally(() => setComplianceLoading(false));
-    }, [userId]);
+            .finally(() => setProgressLoading(false));
+    }, [company?._id, company?.id]);
 
-    const formationStatusOrder = ['pending', 'documents_required', 'processing', 'filed', 'approved', 'completed', 'rejected'];
-    const currentIndex = company ? formationStatusOrder.indexOf(company.status || 'pending') : -1;
-    const formationSteps = [
-        { label: 'Application Received', key: 'pending' },
-        { label: 'Documents Submitted', key: 'documents_required' },
-        { label: 'Processing', key: 'processing' },
-        { label: 'Filed with Government', key: 'filed' },
-        { label: 'Approved', key: 'approved' },
-        { label: 'Documents Delivered', key: 'completed' },
-    ].map((step, idx) => {
-        const statusIndex = formationStatusOrder.indexOf(step.key);
-        const isCompleted = currentIndex > statusIndex;
-        const isCurrent = currentIndex === statusIndex;
-        return {
-            label: step.label,
-            status: isCompleted ? 'completed' : isCurrent ? 'current' : 'pending',
-            date: company?.updatedAt ? new Date(company.updatedAt).toLocaleDateString() : 'Pending',
-            details: company?.status === 'rejected' && step.key === 'completed' ? 'Rejected' : undefined,
-        };
-    });
+    const formatTimelineDate = (value?: string | Date | null) => {
+        if (!value) return 'Pending';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return 'Pending';
+        return parsed.toLocaleDateString();
+    };
 
-    const einSteps = [
-        {
-            label: 'EIN Assigned',
-            status: company?.ein ? 'completed' : 'pending',
-            date: company?.ein ? new Date(company.updatedAt || company.createdAt || Date.now()).toLocaleDateString() : 'Pending',
-            details: company?.ein || 'Awaiting EIN',
-        },
-    ];
+    const buildStepsFromProgress = (
+        definitions: Array<{ key: string; label: string; description: string }>,
+        progressObj: any,
+        legacyCurrentKey: string | null
+    ) => {
+        const keys = definitions.map((step) => step.key);
+        const currentKey = legacyCurrentKey || keys.find((key) => progressObj?.[key]?.status !== 'completed') || keys[keys.length - 1];
 
-    const complianceSteps = (complianceEvents || []).slice(0, 4).map((event) => ({
-        label: event.rule?.name || 'Compliance Filing',
-        status: event.status === 'completed' || event.status === 'filed' ? 'completed' : event.status === 'overdue' ? 'current' : 'pending',
-        date: event.dueDate ? new Date(event.dueDate).toLocaleDateString() : 'Pending',
-        details: event.rule?.description || '',
-    }));
+        return definitions.map((step) => {
+            const rawStatus = progressObj?.[step.key]?.status;
+            const isCompleted = rawStatus === 'completed' || (legacyCurrentKey ? keys.indexOf(step.key) < keys.indexOf(legacyCurrentKey) : false);
+            const isCurrent = step.key === currentKey && !isCompleted;
+            return {
+                label: step.label,
+                status: isCompleted ? 'completed' : isCurrent ? 'current' : 'pending',
+                date: isCompleted
+                    ? formatTimelineDate(progressObj?.[step.key]?.completedAt || company?.updatedAt || company?.createdAt)
+                    : isCurrent
+                        ? 'In Progress'
+                        : 'Pending',
+                details: step.description,
+            };
+        });
+    };
+
+    const formationProgressObj = progressData?.formationProgress || (typeof company?.formationProgress === 'object' ? company.formationProgress : null);
+    const formationStatusFallback: Record<string, string> = {
+        pending: 'nameCheck',
+        documents_required: 'filingPrep',
+        processing: 'filingPrep',
+        filed: 'stateFiling',
+        approved: 'approved',
+        completed: 'approved',
+        rejected: 'filingPrep',
+    };
+    const formationLegacyMap: Record<string, string> = {
+        name_check: 'nameCheck',
+        filing_prep: 'filingPrep',
+        state_filing: 'stateFiling',
+        approved: 'approved',
+    };
+    const formationLegacyCurrent = formationProgressObj
+        ? null
+        : typeof company?.formationProgress === 'string'
+            ? formationLegacyMap[company.formationProgress] || 'nameCheck'
+            : formationStatusFallback[company?.status || 'pending'] || 'nameCheck';
+    const formationSteps = buildStepsFromProgress(
+        [
+            { key: 'nameCheck', label: 'Name Check', description: 'Verify company name availability in the state registry.' },
+            { key: 'filingPrep', label: 'Filing Prep', description: 'Prepare Articles of Organization or Incorporation.' },
+            { key: 'stateFiling', label: 'State Filing', description: 'Submit formation documents to the Secretary of State.' },
+            { key: 'approved', label: 'Approved', description: 'State approves the company and issues certificate.' },
+        ],
+        formationProgressObj,
+        formationLegacyCurrent
+    );
+
+    const einProgressObj = progressData?.einProgress || (typeof company?.einProgress === 'object' ? company.einProgress : null);
+    const einLegacyMap: Record<string, string> = {
+        ss4_application: 'ss4Application',
+        irs_submission: 'irsSubmission',
+        processing: 'processing',
+        allotment: 'allotment',
+    };
+    const einLegacyCurrent = einProgressObj
+        ? null
+        : typeof company?.einProgress === 'string'
+            ? einLegacyMap[company.einProgress] || 'ss4Application'
+            : company?.ein
+                ? 'allotment'
+                : 'ss4Application';
+    const einNumber = progressData?.einNumber || einProgressObj?.einNumber || company?.ein || '';
+    const einProgressNormalized = einProgressObj
+        ? {
+            ...einProgressObj,
+            allotment: {
+                ...(einProgressObj.allotment || {}),
+                status: einNumber ? 'completed' : einProgressObj?.allotment?.status,
+            },
+        }
+        : null;
+    const einSteps = buildStepsFromProgress(
+        [
+            { key: 'ss4Application', label: 'SS-4 Application', description: 'Prepare the IRS SS-4 EIN application form.' },
+            { key: 'irsSubmission', label: 'IRS Submission', description: 'Submit the SS-4 form to the IRS.' },
+            { key: 'processing', label: 'Processing', description: 'IRS processing the EIN application.' },
+            { key: 'allotment', label: 'Allotment', description: einNumber ? `EIN issued: ${einNumber}` : 'EIN issued by IRS.' },
+        ],
+        einProgressNormalized,
+        einLegacyCurrent
+    );
+
+    const complianceProgressObj = progressData?.initialCompliance || (typeof company?.initialCompliance === 'object' ? company.initialCompliance : null);
+    const complianceLegacyMap: Record<string, string> = {
+        operating_agreement: 'operatingAgreement',
+        initial_resolutions: 'initialResolutions',
+        boi_report: 'boiReport',
+        good_standing: 'goodStanding',
+    };
+    const complianceLegacyCurrent = complianceProgressObj
+        ? null
+        : typeof company?.complianceProgress === 'string'
+            ? complianceLegacyMap[company.complianceProgress] || 'operatingAgreement'
+            : 'operatingAgreement';
+    const complianceSetupSteps = buildStepsFromProgress(
+        [
+            { key: 'operatingAgreement', label: 'Operating Agreement', description: 'Company operating agreement prepared and signed.' },
+            { key: 'initialResolutions', label: 'Initial Resolutions', description: 'Internal corporate resolutions approved.' },
+            { key: 'boiReport', label: 'BOI Report', description: 'Beneficial Ownership Information filing submitted.' },
+            { key: 'goodStanding', label: 'Good Standing', description: 'Company is compliant and active.' },
+        ],
+        complianceProgressObj,
+        complianceLegacyCurrent
+    );
+
+    const resolveDocumentUrl = (docId: string, forceDownload = false) =>
+        `${API_BASE_URL}/documents/${docId}/download${forceDownload ? '?download=1' : ''}`;
+
+    const openOfficialDocument = async (doc: any, mode: 'view' | 'download') => {
+        const docId = doc?.id || doc?._id;
+        if (!docId) return;
+        const docName = doc?.name || doc?.originalName || 'document';
+        const url = resolveDocumentUrl(docId, mode === 'download');
+
+        try {
+            const response = await fetch(url, { credentials: 'include' });
+            if (!response.ok) {
+                const message = await response.json().then((data) => data?.message).catch(() => '');
+                throw new Error(message || 'Unable to fetch document.');
+            }
+
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            if (mode === 'view') {
+                const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                if (!opened) {
+                    const fallback = document.createElement('a');
+                    fallback.href = blobUrl;
+                    fallback.download = docName;
+                    document.body.appendChild(fallback);
+                    fallback.click();
+                    fallback.remove();
+                }
+            } else {
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = docName;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            }
+
+            setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000);
+        } catch (error: any) {
+            if (error instanceof TypeError) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+                return;
+            }
+            toast({
+                variant: 'destructive',
+                title: 'Unable to open document',
+                description: error?.message || 'Could not open this file.',
+            });
+        }
+    };
+
+    const registeredAgentValue = (company?.registeredAgent || '').trim();
+    const mailingAddressValue = (company?.mailingAddress || '').trim();
+    const authorizedMembersValue = Array.isArray(company?.authorizedMembers)
+        ? company.authorizedMembers.join(', ')
+        : (company?.authorizedMembers || '');
+    const internalIdValue = company?.internalId || userId || 'USR-78901';
+    const goodStandingLabel = company?.goodStandingStatus?.trim() || 'Active / Good Standing';
 
     return (
         <SectionWrapper title="Company & Legal Details">
@@ -774,7 +923,7 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
                         <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
                             <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                                 <h3 className="text-lg font-bold text-gray-800">Corporate Information</h3>
-                                <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase">Active / Good Standing</span>
+                                <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase">{goodStandingLabel}</span>
                             </div>
                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-8 text-sm">
                                 <div>
@@ -795,23 +944,27 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
                                 </div>
                                 <div>
                                     <p className="text-gray-500 text-xs uppercase font-semibold mb-1">Registered Agent</p>
-                                    <p className="text-gray-900 font-medium">N/A</p>
-                                    <p className="text-gray-500 text-xs mt-0.5">No registered agent on file.</p>
+                                    <p className="text-gray-900 font-medium">{registeredAgentValue || 'N/A'}</p>
+                                    {!registeredAgentValue && (
+                                        <p className="text-gray-500 text-xs mt-0.5">No registered agent on file.</p>
+                                    )}
                                 </div>
                                 <div>
                                     <p className="text-gray-500 text-xs uppercase font-semibold mb-1">Mailing Address</p>
-                                    <p className="text-gray-900 font-medium">N/A</p>
-                                    <p className="text-gray-500 text-xs mt-0.5">No mailing address on file.</p>
+                                    <p className="text-gray-900 font-medium">{mailingAddressValue || 'N/A'}</p>
+                                    {!mailingAddressValue && (
+                                        <p className="text-gray-500 text-xs mt-0.5">No mailing address on file.</p>
+                                    )}
                                 </div>
                                 <div>
                                     <p className="text-gray-500 text-xs uppercase font-semibold mb-1">Authorized Members</p>
                                     <div className="flex items-center mt-1">
-                                        <span className="text-gray-900">N/A</span>
+                                        <span className="text-gray-900">{authorizedMembersValue || 'N/A'}</span>
                                     </div>
                                 </div>
                                 <div>
                                     <p className="text-gray-500 text-xs uppercase font-semibold mb-1">Internal ID</p>
-                                    <code className="bg-gray-100 px-2 py-1 rounded text-xs text-gray-600">{userId || 'USR-78901'}</code>
+                                    <code className="bg-gray-100 px-2 py-1 rounded text-xs text-gray-600">{internalIdValue}</code>
                                 </div>
                             </div>
                             <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex justify-end">
@@ -834,8 +987,26 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
                                         .filter((doc) => doc.source === 'legal_docs')
                                         .slice(0, 5)
                                         .map((doc) => (
-                                            <li key={doc._id || doc.id} className="flex items-center text-sm text-gray-700 bg-white p-2 rounded shadow-sm">
-                                                <FileText className="w-4 h-4 mr-2 text-red-500"/> {doc.originalName || 'Document'}
+                                            <li key={doc._id || doc.id} className="flex items-center justify-between text-sm text-gray-700 bg-white p-2 rounded shadow-sm">
+                                                <div className="flex items-center">
+                                                    <FileText className="w-4 h-4 mr-2 text-red-500"/> {doc.name || doc.originalName || 'Document'}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        className="text-xs text-blue-600 hover:underline"
+                                                        onClick={() => openOfficialDocument(doc, 'view')}
+                                                    >
+                                                        View
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="text-xs text-blue-600 hover:underline"
+                                                        onClick={() => openOfficialDocument(doc, 'download')}
+                                                    >
+                                                        Download
+                                                    </button>
+                                                </div>
                                             </li>
                                         ))
                                 )}
@@ -846,19 +1017,17 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
 
                 {/* Timelines */}
                 <h2 className="text-xl font-bold text-gray-800 mb-4">Formation & Compliance History</h2>
-                <Timeline title="Formation Progress" steps={formationSteps} />
-                <Timeline title="EIN Application & Allotment" steps={einSteps} />
-                {complianceLoading ? (
+                {progressLoading && (
                     <div className="flex items-center text-sm text-gray-500 mb-4">
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading compliance events...
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading progress data...
                     </div>
-                ) : complianceError ? (
-                    <div className="text-sm text-red-600 mb-4">{complianceError}</div>
-                ) : complianceSteps.length > 0 ? (
-                    <Timeline title="Upcoming Compliance Events" steps={complianceSteps} />
-                ) : (
-                    <div className="text-sm text-gray-500">No compliance events available yet.</div>
                 )}
+                {progressError && !progressLoading && (
+                    <div className="text-sm text-red-600 mb-4">{progressError}</div>
+                )}
+                <FormationProgressTimeline steps={formationSteps} />
+                <EinProgressTimeline steps={einSteps} />
+                <ComplianceSetupTimeline steps={complianceSetupSteps} />
                 </>
                 )}
             </div>
@@ -867,7 +1036,7 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
 };
 
 // Sub-components for Bookkeeping
-const BookkeepingOverview = ({ isQuickBooksLinked, lastSyncAt, bankAccountCount, financialSnapshot, isQuickBooksLoading }) => {
+const BookkeepingOverview = ({ isQuickBooksLinked, lastSyncAt, bankAccountCount, financialSnapshot, isQuickBooksLoading, onNavigate }) => {
     const lastSyncLabel = lastSyncAt
         ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(lastSyncAt)
         : 'Not synced yet';
@@ -885,7 +1054,13 @@ const BookkeepingOverview = ({ isQuickBooksLinked, lastSyncAt, bankAccountCount,
                         {isQuickBooksLinked && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">via QuickBooks</span>}
                     </div>
                 </div>
-                <button className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition mt-3 sm:mt-0">View Transactions</button>
+                <button
+                    type="button"
+                    onClick={() => onNavigate?.('bookkeeping/transactions')}
+                    className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition mt-3 sm:mt-0"
+                >
+                    View Transactions
+                </button>
             </div>
             <FinancialSnapshot
                 isQuickBooksLinked={isQuickBooksLinked}
@@ -901,6 +1076,75 @@ const BookkeepingOverview = ({ isQuickBooksLinked, lastSyncAt, bankAccountCount,
 // --- New Components for Bookkeeping ---
 
 const RecentTransactions = ({ isQuickBooksLinked, transactions, isLoading }) => {
+    const [showFilters, setShowFilters] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [dateRange, setDateRange] = useState('all');
+    const [minAmount, setMinAmount] = useState('');
+    const [maxAmount, setMaxAmount] = useState('');
+    const normalizedTransactions = useMemo(() => {
+        return (transactions || []).map((tx) => {
+            const description = tx?.Line?.[0]?.Description || tx?.Description || tx?.PrivateNote || 'N/A';
+            const vendor = tx?.VendorRef?.name || tx?.CustomerRef?.name || tx?.EntityRef?.name || 'N/A';
+            const amount = Number(tx?.TotalAmt ?? tx?.Amount ?? 0);
+            const dateValue = tx?.TxnDate || tx?.DueDate || tx?.MetaData?.CreateTime || '';
+            const date = typeof dateValue === 'string' ? dateValue.slice(0, 10) : '';
+            return {
+                id: tx?.Id || `${description}-${date}-${amount}`,
+                description,
+                vendor,
+                amount: Number.isFinite(amount) ? amount : 0,
+                date,
+            };
+        });
+    }, [transactions]);
+    const filteredTransactions = useMemo(() => {
+        const term = searchTerm.trim().toLowerCase();
+        const min = minAmount === '' ? null : Number(minAmount);
+        const max = maxAmount === '' ? null : Number(maxAmount);
+        const now = new Date();
+        const rangeStart = (() => {
+            if (dateRange === '30d') return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+            if (dateRange === '90d') return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90);
+            if (dateRange === '365d') return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
+            return null;
+        })();
+
+        return normalizedTransactions.filter((tx) => {
+            if (term) {
+                const haystack = `${tx.description} ${tx.vendor}`.toLowerCase();
+                if (!haystack.includes(term)) return false;
+            }
+            if (rangeStart && tx.date) {
+                const txDate = new Date(tx.date);
+                if (!Number.isNaN(txDate.getTime()) && txDate < rangeStart) return false;
+            }
+            if (min !== null && Number.isFinite(min) && tx.amount < min) return false;
+            if (max !== null && Number.isFinite(max) && tx.amount > max) return false;
+            return true;
+        });
+    }, [normalizedTransactions, searchTerm, dateRange, minAmount, maxAmount]);
+
+    const handleExportCsv = () => {
+        if (!filteredTransactions.length) return;
+        const header = ['Date', 'Description', 'Vendor', 'Amount'];
+        const rows = filteredTransactions.map((tx) => [
+            tx.date || '',
+            tx.description || '',
+            tx.vendor || '',
+            tx.amount.toFixed(2),
+        ]);
+        const escapeCell = (value) => `"${String(value).replace(/"/g, '""')}"`;
+        const csv = [header, ...rows].map((row) => row.map(escapeCell).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
     
     if (isLoading) {
         return (
@@ -927,15 +1171,75 @@ const RecentTransactions = ({ isQuickBooksLinked, transactions, isLoading }) => 
                     <div className="flex items-center gap-4">
                         {isQuickBooksLinked && (
                             <div className="flex items-center gap-2 text-sm text-gray-500">
-                                <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={80} height={15} />
+                                <Image src="/logo.png" alt="Yourlegal" width={80} height={15} />
                             </div>
                         )}
                         <div className="space-x-2">
-                            <button className="text-sm text-gray-600 font-medium px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50">Filter</button>
-                            <button className="text-sm text-blue-600 font-medium px-3 py-1 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100">Export CSV</button>
+                            <button
+                                type="button"
+                                onClick={() => setShowFilters((prev) => !prev)}
+                                className="text-sm text-gray-600 font-medium px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                            >
+                                {showFilters ? 'Hide Filters' : 'Filter'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleExportCsv}
+                                className="text-sm text-blue-600 font-medium px-3 py-1 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+                            >
+                                Export CSV
+                            </button>
                         </div>
                     </div>
                 </div>
+                {showFilters && (
+                    <div className="p-4 border-b border-gray-100 bg-white">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                            <div>
+                                <Label className="text-xs text-gray-500">Search</Label>
+                                <Input
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Vendor or description"
+                                    className="mt-1"
+                                />
+                            </div>
+                            <div>
+                                <Label className="text-xs text-gray-500">Date Range</Label>
+                                <select
+                                    value={dateRange}
+                                    onChange={(e) => setDateRange(e.target.value)}
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option value="all">All time</option>
+                                    <option value="30d">Last 30 days</option>
+                                    <option value="90d">Last 90 days</option>
+                                    <option value="365d">Last 12 months</option>
+                                </select>
+                            </div>
+                            <div>
+                                <Label className="text-xs text-gray-500">Min Amount</Label>
+                                <Input
+                                    type="number"
+                                    value={minAmount}
+                                    onChange={(e) => setMinAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    className="mt-1"
+                                />
+                            </div>
+                            <div>
+                                <Label className="text-xs text-gray-500">Max Amount</Label>
+                                <Input
+                                    type="number"
+                                    value={maxAmount}
+                                    onChange={(e) => setMaxAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    className="mt-1"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b">
@@ -947,18 +1251,26 @@ const RecentTransactions = ({ isQuickBooksLinked, transactions, isLoading }) => 
                             </tr>
                         </thead>
                         <tbody>
-                            {transactions.map((tx) => (
-                                <React.Fragment key={tx.Id}>
-                                    <tr className="bg-white border-b hover:bg-gray-50 transition">
-                                        <td className="px-6 py-4 text-gray-500">{tx.TxnDate}</td>
-                                        <td className="px-6 py-4 font-medium text-gray-900">{tx.Line[0].Description || 'N/A'}</td>
-                                         <td className="px-6 py-4 text-gray-500">{tx.VendorRef?.name || 'N/A'}</td>
-                                        <td className={`px-6 py-4 text-right font-bold ${tx.TotalAmt > 0 ? 'text-green-600' : 'text-gray-900'}`}>
-                                            {tx.TotalAmt > 0 ? '+' : ''}{tx.TotalAmt.toFixed(2)}
-                                        </td>
-                                    </tr>
-                                </React.Fragment>
-                            ))}
+                            {filteredTransactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">
+                                        No transactions match the selected filters.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredTransactions.map((tx) => (
+                                    <React.Fragment key={tx.id}>
+                                        <tr className="bg-white border-b hover:bg-gray-50 transition">
+                                            <td className="px-6 py-4 text-gray-500">{tx.date || 'N/A'}</td>
+                                            <td className="px-6 py-4 font-medium text-gray-900">{tx.description}</td>
+                                            <td className="px-6 py-4 text-gray-500">{tx.vendor}</td>
+                                            <td className={`px-6 py-4 text-right font-bold ${tx.amount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                                                {tx.amount > 0 ? '+' : ''}{tx.amount.toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    </React.Fragment>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -1221,7 +1533,7 @@ const InvoicingSection = ({ isQuickBooksLinked, invoices, isLoading, accounts, o
                     <h3 className="font-bold text-gray-700">Invoice History</h3>
                     {isQuickBooksLinked && (
                         <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={80} height={15} />
+                            <Image src="/logo.png" alt="Yourlegal" width={80} height={15} />
                         </div>
                     )}
                 </div>
@@ -1434,7 +1746,7 @@ const ChartOfAccounts = ({ isQuickBooksLinked, userId }) => {
                 </div>
                  {isQuickBooksLinked && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={80} height={15} />
+                        <Image src="/logo.png" alt="Yourlegal" width={80} height={15} />
                     </div>
                 )}
             </div>
@@ -1549,7 +1861,7 @@ const BookkeepingReports = ({ isQuickBooksLinked, pnlData, balanceSheetData, cas
                 </div>
                  {isQuickBooksLinked && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={80} height={15} />
+                        <Image src="/logo.png" alt="Yourlegal" width={80} height={15} />
                     </div>
                 )}
             </div>
@@ -1609,7 +1921,7 @@ const BookkeepingReports = ({ isQuickBooksLinked, pnlData, balanceSheetData, cas
 };
 
 
-const ARAPSection = ({ isQuickBooksLinked, invoices, bills }) => {
+const ARAPSection = ({ isQuickBooksLinked, invoices, bills, onNavigate }) => {
     const now = new Date();
     const safeAmount = (value) => {
         const n = Number(value);
@@ -1635,7 +1947,7 @@ const ARAPSection = ({ isQuickBooksLinked, invoices, bills }) => {
                 </div>
                 {isQuickBooksLinked && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={80} height={15} />
+                        <Image src="/logo.png" alt="Yourlegal" width={80} height={15} />
                     </div>
                 )}
             </div>
@@ -1644,13 +1956,25 @@ const ARAPSection = ({ isQuickBooksLinked, invoices, bills }) => {
                     <h3 className="text-lg font-semibold text-green-700 mb-2 flex items-center"><TrendingUp className="w-4 h-4 mr-2" /> Accounts Receivable</h3>
                     <p className="text-3xl font-bold text-green-600">${arTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     <p className="text-sm text-gray-600 mt-1">{arOverdue} overdue invoice{arOverdue === 1 ? '' : 's'}, {arPending} pending.</p>
-                    <button className="mt-3 text-xs text-green-600 font-medium hover:underline">View Invoices</button>
+                    <button
+                        type="button"
+                        onClick={() => onNavigate?.('bookkeeping/invoicing')}
+                        className="mt-3 text-xs text-green-600 font-medium hover:underline"
+                    >
+                        View Invoices
+                    </button>
                 </div>
                 <div className="bg-red-50 p-6 rounded-xl border border-red-200 shadow-md">
                     <h3 className="text-lg font-semibold text-red-700 mb-2 flex items-center"><TrendingDown className="w-4 h-4 mr-2" /> Accounts Payable</h3>
                     <p className="text-3xl font-bold text-red-600">${apTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     <p className="text-sm text-gray-600 mt-1">{apOverdue} overdue bill{apOverdue === 1 ? '' : 's'}, {apPending} due soon.</p>
-                    <button className="mt-3 text-xs text-red-600 font-medium hover:underline">View Bills</button>
+                    <button
+                        type="button"
+                        onClick={() => onNavigate?.('bookkeeping/transactions')}
+                        className="mt-3 text-xs text-red-600 font-medium hover:underline"
+                    >
+                        View Bills
+                    </button>
                 </div>
             </div>
         </div>
@@ -1659,6 +1983,7 @@ const ARAPSection = ({ isQuickBooksLinked, invoices, bills }) => {
 
 const BookkeepingSection = ({
     activePath,
+    onNavigate,
     isQuickBooksLinked,
     userId,
     onQuickBooksConnect,
@@ -1696,7 +2021,14 @@ const BookkeepingSection = ({
             subtitle = 'Manage client billing, track payments, and follow up on overdue invoices.';
             break;
         case 'bookkeeping/ar-ap':
-            content = <ARAPSection isQuickBooksLinked={isQuickBooksLinked} invoices={invoices || []} bills={bills || []} />;
+            content = (
+                <ARAPSection
+                    isQuickBooksLinked={isQuickBooksLinked}
+                    invoices={invoices || []}
+                    bills={bills || []}
+                    onNavigate={onNavigate}
+                />
+            );
             subtitle = 'Track money owed to you (AR) and money you owe (AP).';
             break;
         case 'bookkeeping':
@@ -1709,6 +2041,7 @@ const BookkeepingSection = ({
                     bankAccountCount={bankAccountCount}
                     financialSnapshot={financialSnapshot}
                     isQuickBooksLoading={isLoading}
+                    onNavigate={onNavigate}
                 />
             );
             subtitle = 'An integrated overview of your business’s financial health and activity.';
@@ -1724,8 +2057,9 @@ const BookkeepingSection = ({
                     <p className="text-lg text-gray-600">{subtitle}</p>
                     {isQuickBooksLinked && (
                         <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg">
-                           <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={20} height={20} className="w-5 h-5"/>
-                            <span className="text-sm font-semibold text-gray-700">Powered by QuickBooks</span>
+                             <span className="text-sm font-semibold text-gray-700">Powered by</span>
+                           <Image src="/logo.png" alt="Yourlegal" width={80} height={20} className="h-4 w-auto object-contain"/>
+                           
                         </div>
                     )}
                 </div>
@@ -1736,7 +2070,7 @@ const BookkeepingSection = ({
                 )}
                 {!isQuickBooksLinked && !isLoading && (
                     <div className="text-center p-10 border-2 border-dashed rounded-lg">
-                        <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={120} height={24} className="mx-auto mb-4"/>
+                        <Image src="/logo.png" alt="Yourlegal" width={120} height={24} className="mx-auto mb-4"/>
                         <h3 className="text-lg font-semibold">Connect to QuickBooks</h3>
                         <p className="text-gray-500 mb-4">Link your account to see live bookkeeping data.</p>
                         <Button onClick={() => onQuickBooksConnect?.()}>Connect Now</Button>
@@ -1749,7 +2083,9 @@ const BookkeepingSection = ({
 };
 
 
-const BankingSection = ({ isQuickBooksLinked, accounts, bills, invoices, lastSyncAt, onConnect, onDisconnect, onRefresh, isLoading }) => {
+const BankingSection = ({ isQuickBooksLinked, accounts, bills, invoices, transactions, lastSyncAt, onConnect, onDisconnect, onRefresh, isLoading }) => {
+    const [txnPage, setTxnPage] = useState(1);
+    const pageSize = 10;
     const bankAccounts = (accounts || []).filter(account => account?.AccountType === 'Bank');
     const primaryAccount = bankAccounts[0];
     const lastSyncLabel = lastSyncAt
@@ -1780,6 +2116,53 @@ const BankingSection = ({ isQuickBooksLinked, accounts, bills, invoices, lastSyn
     const uncategorizedCount = (bills || []).filter(
         bill => !bill?.APAccountRef?.name && !bill?.AccountRef?.name
     ).length;
+    const formatDate = (value) => {
+        if (!value) return 'N/A';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return String(value).slice(0, 10);
+        return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(parsed);
+    };
+    const accountRows = bankAccounts.map((account) => ({
+        id: account?.Id || account?.Name,
+        name: account?.Name || account?.FullyQualifiedName || 'Bank Account',
+        type: account?.AccountSubType || account?.AccountType || 'Bank',
+        number: account?.AcctNum || account?.AccountAlias || 'N/A',
+        balance: Number(account?.CurrentBalance ?? account?.Balance ?? 0),
+        currency: account?.CurrencyRef?.value || 'USD',
+    }));
+    const activityRowsAll = [
+        ...(invoices || []).map((invoice) => ({
+            id: `invoice-${invoice?.Id}`,
+            type: 'Invoice',
+            counterparty: invoice?.CustomerRef?.name || 'Customer',
+            date: invoice?.TxnDate || invoice?.DueDate || invoice?.MetaData?.CreateTime,
+            amount: Number(invoice?.Balance ?? invoice?.TotalAmt ?? 0),
+        })),
+        ...(bills || []).map((bill) => ({
+            id: `bill-${bill?.Id}`,
+            type: 'Bill',
+            counterparty: bill?.VendorRef?.name || 'Vendor',
+            date: bill?.TxnDate || bill?.DueDate || bill?.MetaData?.CreateTime,
+            amount: -Number(bill?.Balance ?? bill?.TotalAmt ?? 0),
+        })),
+    ]
+        .filter((row) => Number.isFinite(row.amount))
+        .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+    const transactionRowsAll = (transactions || [])
+        .map((row) => ({
+            id: row?.id || `${row?.name}-${row?.date}-${row?.amount}`,
+            type: row?.type || 'Transaction',
+            counterparty: row?.name || 'N/A',
+            date: row?.date,
+            amount: Number(row?.amount ?? 0),
+            memo: row?.memo || '',
+        }))
+        .filter((row) => Number.isFinite(row.amount))
+        .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+    const tableRowsSource = transactionRowsAll.length > 0 ? transactionRowsAll : activityRowsAll;
+    const totalPages = Math.max(1, Math.ceil(tableRowsSource.length / pageSize));
+    const safePage = Math.min(txnPage, totalPages);
+    const tableRows = tableRowsSource.slice((safePage - 1) * pageSize, safePage * pageSize);
 
     return (
         <SectionWrapper title="Banking & Finance">
@@ -1834,6 +2217,102 @@ const BankingSection = ({ isQuickBooksLinked, accounts, bills, invoices, lastSyn
                             <MetricCard title="Total Cash" value={`$${totalCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} icon={DollarSign} color="text-emerald-500" bgColor="bg-emerald-50" tooltip="Total across QuickBooks bank accounts." />
                             <MetricCard title="Recent Deposit" value={`$${Number(recentDeposit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} icon={TrendingUp} color="text-indigo-500" bgColor="bg-indigo-50" tooltip="Most recent incoming QuickBooks invoice." />
                             <MetricCard title="Uncategorized" value={`${uncategorizedCount}`} icon={ListChecks} color="text-amber-500" bgColor="bg-amber-50" tooltip="Bills without an assigned account." />
+                        </div>
+                        <div className="mt-8 grid grid-cols-1 gap-6">
+                            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h4 className="text-sm font-semibold text-gray-700">Bank Accounts</h4>
+                                    <span className="text-xs text-gray-500">{accountRows.length} linked</span>
+                                </div>
+                                {accountRows.length === 0 ? (
+                                    <div className="text-sm text-gray-500">No bank accounts available.</div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {accountRows.map((account) => (
+                                            <div key={account.id} className="flex items-center justify-between rounded-lg bg-white p-3 shadow-sm border border-gray-100">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-800">{account.name}</p>
+                                                    <p className="text-xs text-gray-500">{account.type} • {account.number}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-sm font-bold text-gray-900">
+                                                        {account.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {account.currency}
+                                                    </p>
+                                                    <p className="text-[10px] text-gray-400">Current Balance</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="mt-8 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-gray-100 bg-gray-50">
+                                <div>
+                                    <h4 className="text-sm font-semibold text-gray-700">All Transactions</h4>
+                                    <p className="text-xs text-gray-500">Full list from QuickBooks transaction report.</p>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <span>Showing</span>
+                                    <span className="font-semibold text-gray-700">
+                                        {tableRowsSource.length === 0 ? 0 : (safePage - 1) * pageSize + 1}
+                                        -
+                                        {Math.min(safePage * pageSize, tableRowsSource.length)}
+                                    </span>
+                                    <span>of {tableRowsSource.length}</span>
+                                </div>
+                            </div>
+                            {tableRowsSource.length === 0 ? (
+                                <div className="p-6 text-sm text-gray-500">No transactions available.</div>
+                            ) : (
+                                <>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b">
+                                                <tr>
+                                                    <th className="px-6 py-3">Date</th>
+                                                    <th className="px-6 py-3">Type</th>
+                                                    <th className="px-6 py-3">Name</th>
+                                                    <th className="px-6 py-3">Memo</th>
+                                                    <th className="px-6 py-3 text-right">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {tableRows.map((row) => (
+                                                    <tr key={row.id} className="border-b last:border-b-0 bg-white hover:bg-gray-50 transition">
+                                                        <td className="px-6 py-4 text-gray-500">{formatDate(row.date)}</td>
+                                                        <td className="px-6 py-4 text-gray-700">{row.type}</td>
+                                                        <td className="px-6 py-4 font-medium text-gray-900">{row.counterparty}</td>
+                                                        <td className="px-6 py-4 text-gray-500">{row.memo || '—'}</td>
+                                                        <td className={`px-6 py-4 text-right font-bold ${row.amount >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                            {row.amount >= 0 ? '+' : ''}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="flex items-center justify-between px-6 py-4 bg-white">
+                                        <button
+                                            type="button"
+                                            onClick={() => setTxnPage((prev) => Math.max(1, prev - 1))}
+                                            disabled={safePage <= 1}
+                                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 text-gray-600 disabled:opacity-50"
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="text-xs text-gray-500">Page {safePage} of {totalPages}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setTxnPage((prev) => Math.min(totalPages, prev + 1))}
+                                            disabled={safePage >= totalPages}
+                                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 text-gray-600 disabled:opacity-50"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </>
                 )}
@@ -2470,7 +2949,7 @@ const SettingsSection = ({ onLogout, userId, user, isQuickBooksLinked, onQuickBo
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Image src="/quickbooks-logo.webp" alt="QuickBooks" width={24} height={24}/>
+                  <Image src="/logo.png" alt="Yourlegal" width={24} height={24}/>
                   <div>
                     <p className="font-semibold">QuickBooks</p>
                     <p className="text-sm text-gray-500">Accounting software for real-time bookkeeping.</p>
@@ -2522,6 +3001,7 @@ export default function PortalPage({ onLogout }) {
     const [isQuickBooksLinked, setIsQuickBooksLinked] = useState(false);
     const [qbBills, setQbBills] = useState([]);
     const [qbInvoices, setQbInvoices] = useState([]);
+    const [qbTransactions, setQbTransactions] = useState([]);
     const [qbPnlData, setQbPnlData] = useState(null);
     const [qbBalanceSheetData, setQbBalanceSheetData] = useState(null);
     const [qbCashFlowData, setQbCashFlowData] = useState(null);
@@ -2551,12 +3031,80 @@ export default function PortalPage({ onLogout }) {
         }
     }, [user]);
 
+    const extractReportRows = (rows: any[] = [], acc: any[] = []) => {
+        rows.forEach((row) => {
+            if (row?.ColData) {
+                acc.push(row.ColData);
+            }
+            if (row?.Rows?.Row?.length) {
+                extractReportRows(row.Rows.Row, acc);
+            }
+        });
+        return acc;
+    };
+
+    const parseTransactionReport = (report: any) => {
+        const columns = report?.Columns?.Column || [];
+        const titles = columns.map((col: any) => col?.ColTitle || col?.Name || '');
+        const rows = extractReportRows(report?.Rows?.Row || []);
+
+        return rows
+            .map((colData: any[], index: number) => {
+                const record: Record<string, string> = {};
+                colData.forEach((col, i) => {
+                    record[titles[i] || `col_${i}`] = col?.value ?? col?.id ?? '';
+                });
+
+                const rawDebit = record.Debit || record['Debit'];
+                const rawCredit = record.Credit || record['Credit'];
+                const rawAmount = record.Amount || record['Amount'] || record['Amount (Currency)'];
+
+                const debit = rawDebit ? Number(String(rawDebit).replace(/,/g, '')) : 0;
+                const credit = rawCredit ? Number(String(rawCredit).replace(/,/g, '')) : 0;
+                let amount = rawAmount ? Number(String(rawAmount).replace(/,/g, '')) : 0;
+
+                if (Number.isFinite(credit) || Number.isFinite(debit)) {
+                    amount = (Number.isFinite(credit) ? credit : 0) - (Number.isFinite(debit) ? debit : 0);
+                }
+
+                const date =
+                    record.Date ||
+                    record['Txn Date'] ||
+                    record['Transaction Date'] ||
+                    record['Doc Date'] ||
+                    '';
+                const type =
+                    record.Type ||
+                    record['Transaction Type'] ||
+                    record['Txn Type'] ||
+                    'Transaction';
+                const name =
+                    record.Name ||
+                    record['Name'] ||
+                    record['Vendor'] ||
+                    record['Customer'] ||
+                    record['Account'] ||
+                    'N/A';
+                const memo = record['Memo/Description'] || record.Memo || record.Description || '';
+
+                return {
+                    id: `txn-${index}-${date}-${amount}`,
+                    date,
+                    type,
+                    name,
+                    memo,
+                    amount: Number.isFinite(amount) ? amount : 0,
+                };
+            })
+            .filter((row) => row.date || row.name || row.amount);
+    };
+
     const loadQuickBooksData = useCallback(async () => {
         if (!isQuickBooksLinked || !user) return;
         setQbLoading(true);
         setQbError(null);
         try {
-            const [billsRes, invoicesRes, pnlRes, balanceSheetRes, cashFlowRes, accountsRes] = await Promise.all([
+            const [billsRes, invoicesRes, pnlRes, balanceSheetRes, cashFlowRes, accountsRes, transactionsRes] = await Promise.all([
                 fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2592,6 +3140,12 @@ export default function PortalPage({ onLogout }) {
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
                     body: JSON.stringify({ method: 'GET', url: 'query?query=select * from Account' })
+                }),
+                fetch(`${QUICKBOOKS_API_BASE}/proxy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ method: 'GET', url: 'reports/TransactionList' })
                 })
             ]);
 
@@ -2601,6 +3155,7 @@ export default function PortalPage({ onLogout }) {
             const balanceSheetData = await balanceSheetRes.json();
             const cashFlowData = await cashFlowRes.json();
             const accountsData = await accountsRes.json();
+            const transactionsData = await transactionsRes.json();
 
             setQbBills(billsData?.QueryResponse?.Bill || []);
             setQbInvoices(invoicesData?.QueryResponse?.Invoice || []);
@@ -2608,6 +3163,7 @@ export default function PortalPage({ onLogout }) {
             setQbBalanceSheetData(balanceSheetData || null);
             setQbCashFlowData(cashFlowData || null);
             setQbAccounts(accountsData?.QueryResponse?.Account || []);
+            setQbTransactions(parseTransactionReport(transactionsData || {}));
             setQbLastSyncAt(new Date());
         } catch (error) {
             console.error(error);
@@ -3049,6 +3605,7 @@ export default function PortalPage({ onLogout }) {
               <BookkeepingSection
                   activePath={activePath}
                   isQuickBooksLinked={isQuickBooksLinked}
+                  onNavigate={handleNavigation}
                   userId={resolvedUserId}
                   onQuickBooksConnect={handleQuickBooksConnect}
                   bills={qbBills}
@@ -3078,6 +3635,7 @@ export default function PortalPage({ onLogout }) {
                         accounts={qbAccounts}
                         bills={qbBills}
                         invoices={qbInvoices}
+                        transactions={qbTransactions}
                         lastSyncAt={qbLastSyncAt}
                         onConnect={handleQuickBooksConnect}
                         onDisconnect={handleQuickBooksDisconnect}
@@ -3137,4 +3695,3 @@ export default function PortalPage({ onLogout }) {
         </div>
     );
 };
-

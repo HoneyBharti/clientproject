@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "@/lib/api-base";
+import { Eye, Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import type { AdminViewContext } from "./types";
 
 export function ClientDocumentsModal({ ctx }: { ctx: AdminViewContext }) {
@@ -29,6 +32,56 @@ export function ClientDocumentsModal({ ctx }: { ctx: AdminViewContext }) {
     documentStatusClass,
     dt,
   } = ctx;
+  const { toast } = useToast();
+
+  const openDocument = async (docId: string, fileName: string, mode: "view" | "download") => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/documents/${docId}/download${mode === "download" ? "?download=1" : ""}`,
+        { credentials: "include" }
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message || "Unable to fetch document.");
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      if (mode === "view") {
+        const opened = window.open(blobUrl, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          const fallback = document.createElement("a");
+          fallback.href = blobUrl;
+          fallback.download = fileName || "document";
+          document.body.appendChild(fallback);
+          fallback.click();
+          fallback.remove();
+        }
+      } else {
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = fileName || "document";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000);
+    } catch (error: any) {
+      if (error instanceof TypeError) {
+        const fallbackUrl = `${API_BASE_URL}/documents/${docId}/download${mode === "download" ? "?download=1" : ""}`;
+        window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      toast({
+        variant: "destructive",
+        title: "Unable to open document",
+        description: error?.message || "Could not open this file.",
+      });
+    }
+  };
 
   return (
     <Dialog
@@ -107,27 +160,46 @@ export function ClientDocumentsModal({ ctx }: { ctx: AdminViewContext }) {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Document</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Updated</TableHead>
+                      <TableHead>Document</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Updated</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedClientUploadedDocuments.map((doc: any) => (
+                      <TableRow key={doc.id}>
+                        <TableCell className="font-medium">{doc.document}</TableCell>
+                        <TableCell>{doc.category}</TableCell>
+                        <TableCell>
+                          <Badge className={cn("border capitalize", documentStatusClass[doc.status])}>
+                            {doc.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{dt(doc.updatedAt)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openDocument(doc.id, doc.document, "view")}
+                            >
+                              <Eye className="mr-1 h-4 w-4" /> View
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openDocument(doc.id, doc.document, "download")}
+                            >
+                              <Download className="mr-1 h-4 w-4" /> Download
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedClientUploadedDocuments.map((doc: any) => (
-                        <TableRow key={doc.id}>
-                          <TableCell className="font-medium">{doc.document}</TableCell>
-                          <TableCell>{doc.category}</TableCell>
-                          <TableCell>
-                            <Badge className={cn("border capitalize", documentStatusClass[doc.status])}>
-                              {doc.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{dt(doc.updatedAt)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                    ))}
+                  </TableBody>
+                </Table>
                 ) : (
                   <p className="text-sm text-muted-foreground">No client uploaded documents for this account.</p>
                 )}
@@ -144,27 +216,46 @@ export function ClientDocumentsModal({ ctx }: { ctx: AdminViewContext }) {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Document</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Updated</TableHead>
+                      <TableHead>Document</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Updated</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedClientAdminDocuments.map((doc: any) => (
+                      <TableRow key={doc.id}>
+                        <TableCell className="font-medium">{doc.document}</TableCell>
+                        <TableCell>{doc.category}</TableCell>
+                        <TableCell>
+                          <Badge className={cn("border capitalize", documentStatusClass[doc.status])}>
+                            {doc.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{dt(doc.updatedAt)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openDocument(doc.id, doc.document, "view")}
+                            >
+                              <Eye className="mr-1 h-4 w-4" /> View
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openDocument(doc.id, doc.document, "download")}
+                            >
+                              <Download className="mr-1 h-4 w-4" /> Download
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedClientAdminDocuments.map((doc: any) => (
-                        <TableRow key={doc.id}>
-                          <TableCell className="font-medium">{doc.document}</TableCell>
-                          <TableCell>{doc.category}</TableCell>
-                          <TableCell>
-                            <Badge className={cn("border capitalize", documentStatusClass[doc.status])}>
-                              {doc.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{dt(doc.updatedAt)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                    ))}
+                  </TableBody>
+                </Table>
                 ) : (
                   <p className="text-sm text-muted-foreground">No admin uploaded files for this account.</p>
                 )}

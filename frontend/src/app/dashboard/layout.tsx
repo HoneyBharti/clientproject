@@ -14,25 +14,20 @@ export default function DashboardLayout({
   const { user, loading, logout } = useAuth();
   const router = useRouter();
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
+  const needsLogin = !loading && !user;
+  const needsPlan = !loading && user && user.role !== 'admin' && !user.servicePlan;
 
-  if (!user) {
-    router.push('/login');
-    return (
-       <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (needsLogin) {
+      router.push('/login');
+      return;
+    }
+    if (needsPlan) {
+      router.replace('/usa/pricing');
+    }
+  }, [needsLogin, needsPlan, router]);
 
-  if (user.role !== 'admin' && !user.servicePlan) {
-    router.replace('/usa/pricing');
+  if (loading || needsLogin || needsPlan) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />

@@ -52,6 +52,15 @@ export const formationsAPI = {
   delete: (id: string) => fetchWithAuth(`${API_BASE_URL}/formations/${id}`, { method: 'DELETE' }),
 };
 
+// Company Progress
+export const companyProgressAPI = {
+  getProgress: (id: string) => fetchWithAuth(`${API_BASE_URL}/company/${id}/progress`),
+  updateProgress: (id: string, data: any) =>
+    fetchWithAuth(`${API_BASE_URL}/company/${id}/progress`, { method: 'PATCH', body: JSON.stringify(data) }),
+  updateEin: (id: string, data: any) =>
+    fetchWithAuth(`${API_BASE_URL}/company/${id}/ein`, { method: 'PATCH', body: JSON.stringify(data) }),
+};
+
 // Orders
 export const ordersAPI = {
   getAll: (params?: { status?: string; page?: number; limit?: number }) => {
@@ -139,6 +148,11 @@ export const adminAPI = {
   updateUserStatus: (userId: string, status: string) =>
     fetchWithAuth(`${API_BASE_URL}/admin/users/status`, { method: 'PUT', body: JSON.stringify({ userId, status }) }),
   getStats: () => fetchWithAuth(`${API_BASE_URL}/admin/stats`),
+};
+
+// Zoho CRM Leads (admin)
+export const zohoAPI = {
+  getLeads: () => fetchWithAuth(`${API_BASE_URL}/zoho/leads`),
 };
 
 // Payments (existing)

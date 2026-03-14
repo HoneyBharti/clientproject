@@ -23,13 +23,19 @@ const sanitizeFileName = (value) =>
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .replace(/_+/g, '_');
 
-const buildS3Key = ({ userId, fileName }) => {
+const buildS3Key = ({ userId, fileName, source, taxFilingId }) => {
   const safeName = sanitizeFileName(fileName);
-  return `documents/${userId}/${Date.now()}_${randomUUID()}_${safeName}`;
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const sourceFolder = source || 'uploads';
+  const scopeFolder = taxFilingId ? `tax-filings/${taxFilingId}` : 'general';
+
+  return `documents/${userId}/${sourceFolder}/${scopeFolder}/${year}/${month}/${Date.now()}_${randomUUID()}_${safeName}`;
 };
 
 const storeDocument = async ({ userId, source, status, fileName, mimeType, buffer, uploadedBy, taxFilingId }) => {
-  const key = buildS3Key({ userId, fileName });
+  const key = buildS3Key({ userId, fileName, source, taxFilingId });
   const { bucket, region } = await uploadToS3({ buffer, key, contentType: mimeType });
 
   return Document.create({

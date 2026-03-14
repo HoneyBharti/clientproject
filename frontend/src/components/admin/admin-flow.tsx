@@ -17,7 +17,6 @@ import {
   History,
   LayoutDashboard,
   LifeBuoy,
-  Mail,
   Menu,
   Package,
   PiggyBank,
@@ -49,7 +48,6 @@ import { ClientDocumentsModal } from "@/components/admin/views/client-documents-
 import { ComplianceView } from "@/components/admin/views/compliance-view";
 import { TaxesView } from "@/components/admin/views/taxes-view";
 import { DocumentsView } from "@/components/admin/views/documents-view";
-import { EmailsView } from "@/components/admin/views/emails-view";
 import { FormationsView } from "@/components/admin/views/formations-view";
 import { OrdersView } from "@/components/admin/views/orders-view";
 import { OnboardingView } from "@/components/admin/views/onboarding-view";
@@ -60,9 +58,11 @@ import { ReportsView } from "@/components/admin/views/reports-view";
 import { ServicesView } from "@/components/admin/views/services-view";
 import { SettingsView } from "@/components/admin/views/settings-view";
 import { UsersView } from "@/components/admin/views/users-view";
+import { ZohoLeadsView } from "@/components/admin/views/zoho-leads-view";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAdminData } from "@/hooks/useAdminData";
 import { API_BASE_URL } from "@/lib/api-base";
+import { allPosts } from "@/lib/blog-posts";
 
 type AdminView =
   | "overview"
@@ -73,7 +73,6 @@ type AdminView =
   | "documents"
   | "payments"
   | "subscriptions"
-  | "emails"
   | "reports"
   | "activity"
   | "settings"
@@ -81,13 +80,14 @@ type AdminView =
   | "services"
   | "quickbooks"
   | "compliance"
-  | "taxes";
+  | "taxes"
+  | "zoho-leads";
 type DocumentStatus = "pending" | "verified" | "rejected" | "missing";
 type DocumentSource = "client_uploads" | "legal_docs";
 type DocumentCategory = "KYC" | "Tax" | "Compliance" | "Banking";
 type ComplianceHealth = "overdue" | "due_7d" | "due_21d" | "on_track";
 type OrderStatus = "pending" | "in_progress" | "waiting_documents" | "completed" | "cancelled";
-type FormationStage = "application_received" | "documents_submitted" | "filed_with_government" | "approved" | "documents_delivered";
+type FormationStage = "name_check" | "filing_prep" | "state_filing" | "approved";
 type PaymentStatus = "pending" | "succeeded" | "failed" | "refunded";
 type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 type TicketPriority = "low" | "medium" | "high" | "urgent";
@@ -115,9 +115,19 @@ type FormationRecord = {
   formationType: string;
   userId: string;
   jurisdiction: string;
+  state?: string;
   stage: FormationStage;
   assignedAgent: string;
   ein?: string;
+  incorporationDate?: string;
+  goodStandingStatus?: string;
+  registeredAgent?: string;
+  mailingAddress?: string;
+  authorizedMembers?: string[] | string;
+  internalId?: string;
+  formationProgress?: any;
+  einProgress?: any;
+  initialCompliance?: any;
 };
 
 type PaymentRecord = {
@@ -183,6 +193,7 @@ type BlogRecord = {
   tags: string[];
   status: "draft" | "published";
   createdAt: string;
+  source?: "static" | "db";
 };
 
 type CmsRecord = {
@@ -282,7 +293,6 @@ const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
   formations: { title: "Company Formations", subtitle: "Monitor formation progress by stage" },
   documents: { title: "Document Center", subtitle: "Track document collection and verification" },
   payments: { title: "Payments", subtitle: "Transactions, invoices, refunds and failures" },
-  emails: { title: "Emails", subtitle: "Templates, logs and resend controls" },
   reports: { title: "Reports", subtitle: "Revenue, growth and service analytics" },
   activity: { title: "Activity Logs", subtitle: "Audit trail of admin actions" },
   settings: { title: "Settings", subtitle: "Stripe, email, currency, tax and country settings" },
@@ -291,17 +301,18 @@ const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
   quickbooks: { title: "QuickBooks Integration", subtitle: "Monitor accounting system connections" },
   compliance: { title: "Compliance Tracking", subtitle: "Monitor deadlines and risk levels" },
   taxes: { title: "Taxes & Filings", subtitle: "Manage government filings and submissions" },
+  "zoho-leads": { title: "Zoho Leads", subtitle: "Leads synced from Zoho CRM" },
 };
 
 const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { key: "overview", label: "Dashboard", icon: LayoutDashboard },
   { key: "users", label: "Users", icon: Users },
+  { key: "zoho-leads", label: "Zoho Leads", icon: TrendingUp },
   { key: "orders", label: "Orders", icon: ClipboardList },
   { key: "onboarding", label: "Onboarding", icon: ClipboardList },
   { key: "formations", label: "Company Formations", icon: Building2 },
   { key: "documents", label: "Documents", icon: FileCheck2 },
   { key: "payments", label: "Payments", icon: CreditCard },
-  { key: "emails", label: "Emails", icon: Mail },
   { key: "quickbooks", label: "QuickBooks", icon: ShieldCheck },
   { key: "compliance", label: "Compliance", icon: ShieldCheck },
   { key: "taxes", label: "Taxes & Filings", icon: PiggyBank },
@@ -315,11 +326,11 @@ const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType
 const viewHref: Record<AdminView, string> = {
   overview: "/admin",
   users: "/admin/users",
+  "zoho-leads": "/admin/zoho-leads",
   orders: "/admin/orders",
   onboarding: "/admin/onboarding",
   formations: "/admin/formations",
   payments: "/admin/payments",
-  emails: "/admin/emails",
   reports: "/admin/reports",
   activity: "/admin/activity-logs",
   settings: "/admin/settings",
@@ -416,11 +427,10 @@ const paymentStatusClass: Record<PaymentStatus, string> = {
 };
 
 const formationStageClass: Record<FormationStage, string> = {
-  application_received: "bg-sky-100 text-sky-700 border-sky-200",
-  documents_submitted: "bg-indigo-100 text-indigo-700 border-indigo-200",
-  filed_with_government: "bg-amber-100 text-amber-700 border-amber-200",
+  name_check: "bg-sky-100 text-sky-700 border-sky-200",
+  filing_prep: "bg-indigo-100 text-indigo-700 border-indigo-200",
+  state_filing: "bg-amber-100 text-amber-700 border-amber-200",
   approved: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  documents_delivered: "bg-green-100 text-green-700 border-green-200",
 };
 
 const ticketStatusClass: Record<TicketStatus, string> = {
@@ -513,7 +523,7 @@ const initialFormations: FormationRecord[] = [
     formationType: "LLC",
     userId: "usr_001",
     jurisdiction: "Delaware",
-    stage: "documents_submitted",
+    stage: "filing_prep",
     assignedAgent: "Daniel Roy",
   },
   {
@@ -523,7 +533,7 @@ const initialFormations: FormationRecord[] = [
     formationType: "Ltd",
     userId: "usr_002",
     jurisdiction: "England",
-    stage: "application_received",
+    stage: "name_check",
     assignedAgent: "Ari Sharma",
   },
   {
@@ -533,7 +543,7 @@ const initialFormations: FormationRecord[] = [
     formationType: "Free Zone LLC",
     userId: "usr_004",
     jurisdiction: "Dubai",
-    stage: "filed_with_government",
+    stage: "state_filing",
     assignedAgent: "Nikhil Rao",
   },
   {
@@ -788,34 +798,36 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     }
   }, []);
 
-  const mapFormationStatusFromBackend = useCallback((status?: string): FormationStage => {
+  const mapFormationStatusFromBackend = useCallback((status?: string, progress?: any): FormationStage => {
+    if (progress?.approved?.status === "completed") return "approved";
+    if (progress?.stateFiling?.status === "completed") return "state_filing";
+    if (progress?.filingPrep?.status === "completed") return "filing_prep";
+    if (progress?.nameCheck?.status === "completed") return "name_check";
+
     switch (status) {
+      case "filed":
+        return "state_filing";
+      case "approved":
+      case "completed":
+        return "approved";
       case "processing":
       case "documents_required":
-        return "documents_submitted";
-      case "filed":
-        return "filed_with_government";
-      case "approved":
-        return "approved";
-      case "completed":
-        return "documents_delivered";
+        return "filing_prep";
       case "pending":
       default:
-        return "application_received";
+        return "name_check";
     }
   }, []);
 
   const mapFormationStageToBackend = useCallback((stage: FormationStage) => {
     switch (stage) {
-      case "documents_submitted":
+      case "filing_prep":
         return "processing";
-      case "filed_with_government":
+      case "state_filing":
         return "filed";
       case "approved":
         return "approved";
-      case "documents_delivered":
-        return "completed";
-      case "application_received":
+      case "name_check":
       default:
         return "pending";
     }
@@ -854,6 +866,43 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     (status?: string): "sent" | "failed" => (status === "sent" ? "sent" : "failed"),
     []
   );
+
+  const getSlugFromPath = useCallback((path?: string) => {
+    if (!path) return "";
+    const sanitized = path.split("?")[0].split("#")[0];
+    const parts = sanitized.split("/").filter(Boolean);
+    return parts[parts.length - 1] || "";
+  }, []);
+
+  const createBlogPlaceholderImage = useCallback((title?: string) => {
+    const label = String(title || "Blog").slice(0, 24);
+    return `https://placehold.co/160x96/e2e8f0/0f172a?text=${encodeURIComponent(label)}`;
+  }, []);
+
+  const mapStaticPostsToBlogs = useCallback((): BlogRecord[] => {
+    return allPosts
+      .map((post) => {
+        const slug = getSlugFromPath(post.path);
+        if (!slug) return null;
+        return {
+          id: `static:${slug}`,
+          title: post.title,
+          slug,
+          image: post.image || createBlogPlaceholderImage(post.title),
+          shortDescription: post.excerpt || "Editorial blog post managed in the admin dashboard.",
+          fullContent: post.excerpt
+            ? `<p>${post.excerpt}</p>`
+            : "<p>Editorial blog post managed in the admin dashboard.</p>",
+          author: "YourLegal Team",
+          category: post.category || "General",
+          tags: [],
+          status: "published",
+          createdAt: new Date().toISOString(),
+          source: "static",
+        };
+      })
+      .filter((post): post is BlogRecord => Boolean(post));
+  }, [createBlogPlaceholderImage, getSlugFromPath]);
 
   useEffect(() => {
     adminData.loadOrders();
@@ -1042,9 +1091,19 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       formationType: formation.entityType || "LLC",
       userId: String(formation.user?._id || formation.user || ""),
       jurisdiction: formation.state || "N/A",
-      stage: mapFormationStatusFromBackend(formation.status),
+      state: formation.state || "",
+      stage: mapFormationStatusFromBackend(formation.status, formation.formationProgress),
       assignedAgent: formation.assignedTo?.name || "Unassigned",
       ein: formation.ein || "",
+      incorporationDate: formation.incorporationDate,
+      goodStandingStatus: formation.goodStandingStatus || "",
+      registeredAgent: formation.registeredAgent || "",
+      mailingAddress: formation.mailingAddress || "",
+      authorizedMembers: formation.authorizedMembers || [],
+      internalId: formation.internalId || "",
+      formationProgress: formation.formationProgress,
+      einProgress: formation.einProgress,
+      initialCompliance: formation.initialCompliance,
     }));
 
     setFormations(mapped);
@@ -1091,11 +1150,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   }, [adminData.emails, normalizeEmailStatus]);
 
   useEffect(() => {
-    if (adminData.blogs.length === 0) {
-      setBlogs([]);
-      return;
-    }
-
+    const staticBlogs = mapStaticPostsToBlogs();
     const mapped = adminData.blogs.map((blog: any) => {
       const authorValue =
         typeof blog.author === "string"
@@ -1106,7 +1161,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
         id: String(blog._id || blog.id),
         title: blog.title,
         slug: blog.slug,
-        image: blog.featuredImage || blog.image || `https://placehold.co/160x96/e2e8f0/0f172a?text=${encodeURIComponent(String(blog.title || "Blog").slice(0, 24))}`,
+        image: blog.featuredImage || blog.image || createBlogPlaceholderImage(blog.title),
         shortDescription: blog.excerpt || blog.shortDescription || "",
         fullContent: blog.content || blog.fullContent || "",
         author: authorValue,
@@ -1114,11 +1169,20 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
         tags: Array.isArray(blog.tags) ? blog.tags : [],
         status: blog.status === "published" ? "published" : "draft",
         createdAt: blog.createdAt || blog.updatedAt || new Date().toISOString(),
+        source: "db",
       };
     });
 
-    setBlogs(mapped);
-  }, [adminData.blogs]);
+    const merged = new Map<string, BlogRecord>();
+    staticBlogs.forEach((blog) => merged.set(blog.slug, blog));
+    mapped.forEach((blog) => merged.set(blog.slug, blog));
+
+    const combined = Array.from(merged.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    setBlogs(combined);
+  }, [adminData.blogs, createBlogPlaceholderImage, mapStaticPostsToBlogs]);
 
   useEffect(() => {
     const userLookup = new Map((liveUsers || []).map((user) => [user.id, user]));
@@ -1924,11 +1988,26 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     }
   };
 
+  const updateFormationDetails = async (formationId: string, details: Record<string, any>) => {
+    const result = await adminData.updateFormation(formationId, details);
+    if (result.success) {
+      addActivity(`Formation ${formationId} details updated`);
+    }
+    return result;
+  };
+
   const updateFormationEin = async (formationId: string, ein: string) => {
     const trimmed = ein.trim();
-    const result = await adminData.updateFormation(formationId, { ein: trimmed });
+    const result = await adminData.updateFormationEinNumber(formationId, { einNumber: trimmed });
     if (result.success) {
       addActivity(`Formation ${formationId} EIN updated`);
+    }
+  };
+
+  const updateFormationProgress = async (formationId: string, section: string, step: string, status: string) => {
+    const result = await adminData.updateFormationProgress(formationId, { section, step, status });
+    if (result.success) {
+      addActivity(`Formation ${formationId} progress updated`);
     }
   };
 
@@ -2116,6 +2195,9 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     onboardingLoading: adminData.onboardingLoading,
     loadOnboardingSubmissions: adminData.loadOnboardingSubmissions,
     createFormationFromOnboarding: adminData.createFormationFromOnboarding,
+    zohoLeads: adminData.zohoLeads,
+    zohoLeadsLoading: adminData.zohoLeadsLoading,
+    loadZohoLeads: adminData.loadZohoLeads,
     recentSignupUsers: resolvedRecentSignupUsers,
     pendingRequestItems: resolvedPendingRequestItems,
     activityLogs,
@@ -2154,7 +2236,9 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     setFormationStage,
     filteredFormations,
     updateFormationStage,
+    updateFormationDetails,
     updateFormationEin,
+    updateFormationProgress,
     paymentStatus,
     setPaymentStatus,
     filteredPayments,
@@ -2420,7 +2504,6 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             {activeView === "onboarding" ? <OnboardingView ctx={viewCtx} /> : null}
             {activeView === "formations" ? <FormationsView ctx={viewCtx} /> : null}
             {activeView === "payments" ? <PaymentsView ctx={viewCtx} /> : null}
-            {activeView === "emails" ? <EmailsView ctx={viewCtx} /> : null}
             {activeView === "reports" ? <ReportsView ctx={viewCtx} /> : null}
             {activeView === "activity" ? <ActivityView ctx={viewCtx} /> : null}
             {activeView === "settings" ? <SettingsView ctx={viewCtx} /> : null}
@@ -2430,6 +2513,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             {activeView === "quickbooks" ? <QuickbooksView ctx={viewCtx} /> : null}
             {activeView === "taxes" ? <TaxesView ctx={viewCtx} /> : null}
             {activeView === "compliance" ? <ComplianceView ctx={viewCtx} /> : null}
+            {activeView === "zoho-leads" ? <ZohoLeadsView ctx={viewCtx} /> : null}
 
             <ClientDocumentsModal ctx={viewCtx} />
           </main>

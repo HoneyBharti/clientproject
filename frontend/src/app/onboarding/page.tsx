@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import React, { Suspense, useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/lib/api-base";
@@ -1530,7 +1531,9 @@ function OnboardingPageContent() {
             <ShieldCheck size={18} className="text-indigo-600" />
             <span className="text-xs font-bold tracking-widest uppercase text-gray-500">Secure Onboarding Portal</span>
           </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight">Yourlegal.in</h1>
+          <div className="flex justify-center">
+            <Image src="/logo.png" alt="Yourlegal" width={220} height={60} priority />
+          </div>
           <p className="text-slate-500 font-medium mt-2 text-lg">Global Incorporation & Compliance Operations</p>
         </div>
 

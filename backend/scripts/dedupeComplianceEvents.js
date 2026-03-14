@@ -1,6 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
 const ComplianceEvent = require('../src/models/ComplianceEvent');
+require('../src/models/ComplianceRule');
 
 const envPath = path.resolve(__dirname, '../.env');
 require('dotenv').config({ path: envPath });

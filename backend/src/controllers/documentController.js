@@ -192,11 +192,13 @@ exports.downloadDocument = async (req, res) => {
     }
 
     const safeName = doc.originalName.replace(/"/g, '');
+    const downloadFlag = String(req.query.download || '').toLowerCase();
+    const dispositionType = downloadFlag === '1' || downloadFlag === 'true' ? 'attachment' : 'inline';
 
     if (doc.data && doc.data.length) {
       res.setHeader('Content-Type', doc.mimeType);
       res.setHeader('Content-Length', doc.size.toString());
-      res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+      res.setHeader('Content-Disposition', `${dispositionType}; filename="${safeName}"`);
       return res.send(doc.data);
     }
 
@@ -213,7 +215,7 @@ exports.downloadDocument = async (req, res) => {
     if (s3Object.ContentLength) {
       res.setHeader('Content-Length', String(s3Object.ContentLength));
     }
-    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${safeName}"`);
     return s3Object.Body.pipe(res);
   } catch (error) {
     res.status(500).json({ message: error.message });

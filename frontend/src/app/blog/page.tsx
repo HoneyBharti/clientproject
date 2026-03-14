@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, Suspense } from 'react';
+import React, { useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { NavHeader } from '@/components/layout/page-header';
 import { AppFooter } from '@/components/layout/page-footer';
@@ -8,34 +8,150 @@ import { Input } from '@/components/ui/input';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { allPosts } from '@/lib/blog-posts';
+import { API_BASE_URL } from '@/lib/api-base';
 
-const categories = [...new Set(allPosts.filter(p => p.category !== 'Pillar').map(post => post.category))];
-const countries = [...new Set(allPosts.map(post => post.country))]
-    .filter(Boolean) 
-    .map(countryName => {
-        let flag = '';
-        if (countryName === 'USA') flag = '🇺🇸';
-        if (countryName === 'Australia') flag = '🇦🇺';
-        if (countryName === 'UAE') flag = '🇦🇪';
-        if (countryName === 'UK') flag = '🇬🇧';
-        if (countryName === 'India') flag = '🇮🇳';
-        if (countryName === 'Netherlands') flag = '🇳🇱';
-        if (countryName === 'Saudi Arabia') flag = '🇸🇦';
-        if (countryName === 'Singapore') flag = '🇸🇬';
-        if (countryName === 'Global') flag = '🌍';
-        return { name: countryName, flag };
+type PublicPost = {
+    title: string;
+    path: string;
+    category: string;
+    country?: string;
+    excerpt?: string;
+    featured?: boolean;
+    image?: string;
+    imageHint?: string;
+    slug: string;
+    source: 'static' | 'db';
+};
+
+const getSlugFromPath = (path: string) => {
+    const sanitized = path.split('?')[0].split('#')[0];
+    const parts = sanitized.split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+};
+
+const createPlaceholderImage = (title: string) =>
+    `https://placehold.co/600x400/e2e8f0/0f172a?text=${encodeURIComponent(title.slice(0, 24) || 'Blog')}`;
+
+const stripHtml = (value: string) =>
+    value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+const buildStaticPosts = (): PublicPost[] =>
+    allPosts
+        .map((post) => ({
+            ...post,
+            slug: getSlugFromPath(post.path),
+            source: 'static' as const,
+        }))
+        .filter((post) => Boolean(post.slug));
+
+const mergePosts = (staticPosts: PublicPost[], dbPosts: PublicPost[]) => {
+    const merged = new Map<string, PublicPost>();
+    staticPosts.forEach((post) => merged.set(post.slug, post));
+    dbPosts.forEach((post) => {
+        const existing = merged.get(post.slug);
+        if (existing) {
+            merged.set(post.slug, {
+                ...existing,
+                ...post,
+                path: existing.path || post.path,
+                featured: existing.featured ?? post.featured,
+                imageHint: existing.imageHint ?? post.imageHint,
+                source: post.source,
+            });
+            return;
+        }
+        merged.set(post.slug, post);
     });
+    return Array.from(merged.values());
+};
 
 function BlogContent() {
     const [searchTerm, setSearchTerm] = useState('');
+    const [dbPosts, setDbPosts] = useState<PublicPost[]>([]);
+    const [postsError, setPostsError] = useState('');
     const searchParams = useSearchParams();
 
     const topicFilter = searchParams.get('topic');
     const countryFilter = searchParams.get('country');
-    
-    const featuredPosts = allPosts.filter(p => p.featured && !topicFilter && !countryFilter);
-    
-    const filteredPosts = allPosts.filter(post => {
+
+    const staticPosts = useMemo(() => buildStaticPosts(), []);
+    const mergedPosts = useMemo(() => mergePosts(staticPosts, dbPosts), [staticPosts, dbPosts]);
+
+    useEffect(() => {
+        let isMounted = true;
+        const loadBlogs = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/blogs?status=published&limit=200`, { cache: 'no-store' });
+                const data = await response.json().catch(() => null);
+                if (!response.ok || !data?.blogs) {
+                    throw new Error(data?.message || 'Unable to load blogs.');
+                }
+
+                const mapped: PublicPost[] = data.blogs
+                    .map((blog: any) => {
+                        const slug = String(blog.slug || '').trim();
+                        if (!slug) return null;
+                        const excerptSource = blog.excerpt || stripHtml(blog.content || '');
+                        const excerpt = excerptSource ? excerptSource.slice(0, 180) : '';
+                        return {
+                            title: blog.title || 'Untitled Blog',
+                            path: `/blog/${slug}`,
+                            category: blog.category || 'General',
+                            country: blog.country || 'Global',
+                            excerpt,
+                            featured: false,
+                            image: blog.featuredImage || createPlaceholderImage(blog.title || 'Blog'),
+                            imageHint: 'legal blog',
+                            slug,
+                            source: 'db',
+                        };
+                    })
+                    .filter((post: PublicPost | null): post is PublicPost => Boolean(post));
+
+                if (isMounted) {
+                    setDbPosts(mapped);
+                    setPostsError('');
+                }
+            } catch (error) {
+                if (isMounted) {
+                    setDbPosts([]);
+                    setPostsError(error instanceof Error ? error.message : 'Unable to load blogs.');
+                }
+            }
+        };
+
+        loadBlogs();
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const categories = useMemo(
+        () => [...new Set(mergedPosts.filter(p => p.category !== 'Pillar').map(post => post.category))],
+        [mergedPosts]
+    );
+    const countries = useMemo(
+        () => [...new Set(mergedPosts.map(post => post.country))]
+            .filter(Boolean)
+            .map(countryName => {
+                let flag = '';
+                if (countryName === 'USA') flag = '🇺🇸';
+                if (countryName === 'Australia') flag = '🇦🇺';
+                if (countryName === 'UAE') flag = '🇦🇪';
+                if (countryName === 'UK') flag = '🇬🇧';
+                if (countryName === 'India') flag = '🇮🇳';
+                if (countryName === 'Netherlands') flag = '🇳🇱';
+                if (countryName === 'Saudi Arabia') flag = '🇸🇦';
+                if (countryName === 'Singapore') flag = '🇸🇬';
+                if (countryName === 'Global') flag = '🌍';
+                return { name: countryName, flag };
+            }),
+        [mergedPosts]
+    );
+
+    const featuredPosts = mergedPosts.filter(p => p.featured && !topicFilter && !countryFilter);
+
+    const filteredPosts = mergedPosts.filter(post => {
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch = searchTerm
             ? post.title.toLowerCase().includes(searchLower) ||
@@ -160,7 +276,9 @@ function BlogContent() {
                                 ))}
                             </div>
                         ) : (
-                            <p className="text-gray-500 text-center py-10">No articles found. Try removing some filters or searching for a different term.</p>
+                            <p className="text-gray-500 text-center py-10">
+                                {postsError || 'No articles found. Try removing some filters or searching for a different term.'}
+                            </p>
                         )}
                     </div>
                 </div>
@@ -182,4 +300,3 @@ export default function BlogPage() {
     </Suspense>
   );
 }
-

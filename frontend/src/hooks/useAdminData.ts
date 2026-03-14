@@ -13,6 +13,8 @@ import {
   paymentsAPI,
   documentsAPI,
   onboardingAPI,
+  companyProgressAPI,
+  zohoAPI,
 } from '@/lib/admin-api';
 
 export function useAdminData() {
@@ -55,6 +57,11 @@ export function useAdminData() {
   // Onboarding
   const [onboardingSubmissions, setOnboardingSubmissions] = useState<any[]>([]);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
+
+  // Zoho Leads
+  const [zohoLeads, setZohoLeads] = useState<any[]>([]);
+  const [zohoLeadsLoading, setZohoLeadsLoading] = useState(false);
+  const [zohoLeadsError, setZohoLeadsError] = useState<string | null>(null);
 
   // Load Activity Logs
   const loadActivityLogs = useCallback(async () => {
@@ -195,6 +202,21 @@ export function useAdminData() {
     }
   }, []);
 
+  const loadZohoLeads = useCallback(async () => {
+    setZohoLeadsLoading(true);
+    setZohoLeadsError(null);
+    try {
+      const data = await zohoAPI.getLeads();
+      setZohoLeads(data.leads || []);
+    } catch (error) {
+      console.error('Failed to load Zoho leads:', error);
+      setZohoLeads([]);
+      setZohoLeadsError(error instanceof Error ? error.message : 'Unable to load Zoho leads.');
+    } finally {
+      setZohoLeadsLoading(false);
+    }
+  }, []);
+
   // CRUD Operations
   const createBlog = useCallback(async (blogData: any) => {
     try {
@@ -229,6 +251,26 @@ export function useAdminData() {
   const updateFormation = useCallback(async (id: string, formationData: any) => {
     try {
       await formationsAPI.update(id, formationData);
+      await loadFormations();
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }, [loadFormations]);
+
+  const updateFormationProgress = useCallback(async (id: string, progressData: any) => {
+    try {
+      await companyProgressAPI.updateProgress(id, progressData);
+      await loadFormations();
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }, [loadFormations]);
+
+  const updateFormationEinNumber = useCallback(async (id: string, einData: any) => {
+    try {
+      await companyProgressAPI.updateEin(id, einData);
       await loadFormations();
       return { success: true };
     } catch (error: any) {
@@ -338,6 +380,8 @@ export function useAdminData() {
     emails,
     complianceData,
     onboardingSubmissions,
+    zohoLeads,
+    zohoLeadsError,
 
     // Loading states
     activityLoading,
@@ -350,6 +394,7 @@ export function useAdminData() {
     emailsLoading,
     complianceLoading,
     onboardingLoading,
+    zohoLeadsLoading,
 
     // Load functions
     loadActivityLogs,
@@ -362,12 +407,15 @@ export function useAdminData() {
     loadEmails,
     loadCompliance,
     loadOnboardingSubmissions,
+    loadZohoLeads,
 
     // CRUD operations
     createBlog,
     updateBlog,
     deleteBlog,
     updateFormation,
+    updateFormationProgress,
+    updateFormationEinNumber,
     updateOrder,
     updateTicket,
     addTicketMessage,

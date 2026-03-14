@@ -60,6 +60,7 @@ app.use('/api/documents', require('./routes/documents'));
 app.use('/api/activity-logs', require('./routes/activityLogs'));
 app.use('/api/blogs', require('./routes/blogs'));
 app.use('/api/formations', require('./routes/formations'));
+app.use('/api/company', require('./routes/company'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/tickets', require('./routes/tickets'));
 app.use('/api/services', require('./routes/services'));
@@ -70,9 +71,20 @@ app.use('/api/onboarding', require('./routes/onboarding'));
 app.use('/api/compliance', require('./routes/compliance'));
 app.use('/api/tax-filings', require('./routes/taxFilings'));
 app.use('/api/admin/tax-filings', require('./routes/adminTaxFilings'));
+app.use('/api/zoho', require('./routes/zohoRoutes'));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Zoho OAuth redirect helper (dev use)
+app.get('/zoho/callback', (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+    res.status(400).send('Zoho callback received with no code parameter.');
+    return;
+  }
+  res.send(`Zoho auth code received. Copy this code: ${code}`);
 });
 
 app.use((err, req, res, next) => {

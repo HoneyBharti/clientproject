@@ -27,6 +27,7 @@ type BlogRecord = {
   tags: string[];
   status: BlogStatus;
   createdAt: string;
+  source?: "static" | "db";
 };
 
 type BlogFormState = {
@@ -209,7 +210,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
       status: form.status,
     };
 
-    if (editingId) {
+    if (editingId && !editingId.startsWith("static:")) {
       const result = await updateBlog(editingId, payload);
       if (!result.success) {
         setFormMessage(result.error || "Unable to update blog.");
@@ -238,6 +239,11 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
 
   const handleDeleteBlog = async () => {
     if (!blogToDelete) return;
+    if (blogToDelete.id.startsWith("static:")) {
+      setFormMessage("Static blogs cannot be deleted. Edit and publish a new version instead.");
+      setBlogToDelete(null);
+      return;
+    }
     const result = await deleteBlog(blogToDelete.id);
     if (!result.success) {
       setFormMessage(result.error || "Unable to delete blog.");
@@ -437,7 +443,9 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                 </TableHeader>
                 <TableBody>
                   {filteredBlogs.length ? (
-                    filteredBlogs.map((blog) => (
+                    filteredBlogs.map((blog) => {
+                      const isStatic = blog.id.startsWith("static:");
+                      return (
                       <TableRow key={blog.id}>
                         <TableCell>
                           <div className="flex items-center gap-2 sm:gap-3">
@@ -465,14 +473,21 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                               <Eye className="mr-1 sm:mr-2 h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               <span className="text-xs">View</span>
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={() => setBlogToDelete(blog)} className="h-8 px-2 sm:px-3">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => setBlogToDelete(blog)}
+                              className="h-8 px-2 sm:px-3"
+                              disabled={isStatic}
+                            >
                               <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               <span className="text-xs">Delete</span>
                             </Button>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
+                      );
+                    })
                   ) : (
                     <TableRow>
                       <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">

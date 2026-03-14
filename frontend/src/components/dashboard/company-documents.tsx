@@ -13,28 +13,27 @@ import { Input } from '@/components/ui/input';
 import {
   FileText,
   Upload,
-  MoreVertical,
   Loader2,
   AlertCircle,
   FolderDown,
+  Eye,
+  Download,
   User,
   Shield,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
+import { API_BASE_URL } from '@/lib/api-base';
 
 interface DocumentFile {
   id: string;
   name: string;
-  url: string;
   size?: number;
   uploadDate?: string;
   status?: string;
   folder: 'client' | 'team';
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 const toBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -61,10 +60,13 @@ const parseErrorMessage = async (response: Response, fallback: string) => {
   }
 };
 
-const formatSizeMb = (size?: number) => {
-  if (!size) return '0.00 MB';
-  return `${(size / 1024 / 1024).toFixed(2)} MB`;
-};
+  const formatSizeMb = (size?: number) => {
+    if (!size) return '0.00 MB';
+    return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  const resolveDocumentUrl = (docId: string, forceDownload = false) =>
+    `${API_BASE_URL}/documents/${docId}/download${forceDownload ? '?download=1' : ''}`;
 
 export function CompanyDocuments() {
   const [file, setFile] = useState<File | null>(null);
@@ -78,6 +80,55 @@ export function CompanyDocuments() {
 
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === 'admin';
+  const openDocument = useCallback(
+    async (doc: DocumentFile, mode: 'view' | 'download') => {
+      try {
+        const response = await fetch(resolveDocumentUrl(doc.id, mode === 'download'), {
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          const message = await parseErrorMessage(response, 'Unable to fetch document.');
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        if (mode === 'view') {
+          const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+          if (!opened) {
+            const fallback = document.createElement('a');
+            fallback.href = blobUrl;
+            fallback.download = doc.name || 'document';
+            document.body.appendChild(fallback);
+            fallback.click();
+            fallback.remove();
+          }
+        } else {
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = doc.name || 'document';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }
+
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000);
+      } catch (openError: any) {
+        if (openError instanceof TypeError) {
+          const fallbackUrl = resolveDocumentUrl(doc.id, mode === 'download');
+          window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+
+        toast({
+          variant: 'destructive',
+          title: 'Unable to open document',
+          description: openError?.message || 'Could not open this file.',
+        });
+      }
+    },
+    [toast]
+  );
 
   const fetchDocuments = useCallback(
     async (userId?: string) => {
@@ -86,8 +137,8 @@ export function CompanyDocuments() {
 
       try {
         const endpoint = isAdmin && userId
-          ? `${API_BASE}/api/documents/admin/user/${userId}`
-          : `${API_BASE}/api/documents/me`;
+          ? `${API_BASE_URL}/documents/admin/user/${userId}`
+          : `${API_BASE_URL}/documents/me`;
 
         const response = await fetch(endpoint, { credentials: 'include' });
         if (!response.ok) {
@@ -99,7 +150,6 @@ export function CompanyDocuments() {
         const fetchedDocs: DocumentFile[] = (data.documents || []).map((doc: any) => ({
           id: doc.id,
           name: doc.name,
-          url: doc.downloadUrl,
           folder: doc.source === 'client_uploads' ? 'client' : 'team',
           size: doc.size,
           status: doc.status,
@@ -162,8 +212,8 @@ export function CompanyDocuments() {
       };
 
       const endpoint = isAdmin
-        ? `${API_BASE}/api/documents/admin/user/${targetUserId}/upload-official`
-        : `${API_BASE}/api/documents/me/upload-client`;
+        ? `${API_BASE_URL}/documents/admin/user/${targetUserId}/upload-official`
+        : `${API_BASE_URL}/documents/me/upload-client`;
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -229,9 +279,13 @@ export function CompanyDocuments() {
                 <div className="flex items-center gap-3 overflow-hidden">
                   <FileText className="h-6 w-6 flex-shrink-0 text-muted-foreground" />
                   <div className="truncate">
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="truncate font-medium hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => openDocument(doc, 'view')}
+                      className="truncate font-medium hover:underline text-left"
+                    >
                       {doc.name}
-                    </a>
+                    </button>
                     {doc.uploadDate && (
                       <p className="text-sm text-muted-foreground">
                         {formatSizeMb(doc.size)} - Uploaded on {doc.uploadDate}
@@ -239,10 +293,16 @@ export function CompanyDocuments() {
                     )}
                   </div>
                 </div>
-                <Button variant="ghost" size="icon">
-                  <MoreVertical className="h-4 w-4" />
-                  <span className="sr-only">More options for {doc.name}</span>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="icon" onClick={() => openDocument(doc, 'view')}>
+                    <Eye className="h-4 w-4" />
+                    <span className="sr-only">View {doc.name}</span>
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => openDocument(doc, 'download')}>
+                    <Download className="h-4 w-4" />
+                    <span className="sr-only">Download {doc.name}</span>
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

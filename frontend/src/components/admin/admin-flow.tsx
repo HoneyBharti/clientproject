@@ -17,6 +17,7 @@ import {
   History,
   LayoutDashboard,
   LifeBuoy,
+  Loader2,
   Menu,
   Package,
   PiggyBank,
@@ -672,6 +673,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
+  const [showLoader, setShowLoader] = useState(false);
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | ClientStatus>("all");
@@ -767,6 +769,18 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
   const [liveUserDocuments, setLiveUserDocuments] = useState<Record<string, LiveAdminDocument[]>>({});
   const [isUsersDataLoading, setIsUsersDataLoading] = useState(true);
   const [usersDataError, setUsersDataError] = useState("");
+
+  const {
+    activityLoading,
+    blogsLoading,
+    formationsLoading,
+    ordersLoading,
+    servicesLoading,
+    settingsLoading,
+    complianceLoading,
+    onboardingLoading,
+    zohoLeadsLoading,
+  } = adminData;
 
   const formatServiceType = useCallback((value?: string) => {
     if (!value) return "Service";
@@ -877,6 +891,68 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     (status?: string): "sent" | "failed" => (status === "sent" ? "sent" : "failed"),
     []
   );
+
+  const isAdminLoading = useMemo(() => {
+    switch (activeView) {
+      case "overview":
+        return isDashboardMetricsLoading || isUsersDataLoading || activityLoading || ordersLoading || formationsLoading;
+      case "users":
+        return isUsersDataLoading;
+      case "orders":
+        return ordersLoading;
+      case "onboarding":
+        return onboardingLoading;
+      case "formations":
+        return formationsLoading;
+      case "payments":
+        return isUsersDataLoading;
+      case "reports":
+        return isDashboardMetricsLoading || isUsersDataLoading;
+      case "activity":
+        return activityLoading;
+      case "settings":
+        return settingsLoading;
+      case "blogs":
+        return blogsLoading;
+      case "services":
+        return servicesLoading;
+      case "quickbooks":
+        return isUsersDataLoading;
+      case "taxes":
+        return complianceLoading;
+      case "compliance":
+        return complianceLoading;
+      case "zoho-leads":
+        return zohoLeadsLoading;
+      default:
+        return false;
+    }
+  }, [
+    activeView,
+    activityLoading,
+    blogsLoading,
+    complianceLoading,
+    formationsLoading,
+    isDashboardMetricsLoading,
+    isUsersDataLoading,
+    onboardingLoading,
+    ordersLoading,
+    servicesLoading,
+    settingsLoading,
+    zohoLeadsLoading,
+  ]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (isAdminLoading) {
+      timer = setTimeout(() => setShowLoader(true), 200);
+    } else {
+      setShowLoader(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAdminLoading]);
 
   const getSlugFromPath = useCallback((path?: string) => {
     if (!path) return "";
@@ -2357,6 +2433,24 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {showLoader ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/20 backdrop-blur-sm">
+          <div className="w-[90%] max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Loading Admin Workspace</p>
+                <p className="text-xs text-gray-500">Preparing {viewMeta[activeView].title.toLowerCase()}...</p>
+              </div>
+            </div>
+            <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400" />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex min-h-screen">
         {/* Mobile menu overlay */}
         {mobileMenuOpen && (

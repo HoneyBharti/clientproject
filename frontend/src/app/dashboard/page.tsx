@@ -2801,6 +2801,71 @@ const DocumentsSection = () => (
 );
 
 const SupportSection = ({ navigate }) => {
+    const { user } = useAuth();
+    const [subscription, setSubscription] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const planPricing = {
+        'Micro': { monthly: 499, yearly: 499 },
+        'Vitals': { monthly: 199, yearly: 2388 },
+        'Elite': { monthly: 299, yearly: 3588 },
+        'Starter': { monthly: 99, yearly: 1188 },
+        'Growth': { monthly: 149, yearly: 1788 },
+        'Scale': { monthly: 249, yearly: 2988 }
+    };
+
+    useEffect(() => {
+        const fetchSubscription = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/payment/subscription`, {
+                    credentials: 'include',
+                });
+                const data = await response.json();
+                if (data.success) {
+                    setSubscription(data.subscription);
+                }
+            } catch (error) {
+                console.error('Failed to fetch subscription:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchSubscription();
+    }, []);
+
+    const getPlanDisplayInfo = () => {
+        if (!user?.servicePlan) {
+            return {
+                name: 'No Plan',
+                price: 'Contact Support',
+                renewal: 'N/A'
+            };
+        }
+
+        const plan = user.servicePlan;
+        const pricing = planPricing[plan] || { yearly: 0 };
+        const price = `$${pricing.yearly.toLocaleString()}/year`;
+
+        let renewal = 'N/A';
+        if (subscription?.current_period_end) {
+            const renewalDate = new Date(subscription.current_period_end * 1000);
+            renewal = renewalDate.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+
+        return {
+            name: `${plan} Plan`,
+            price,
+            renewal: renewal !== 'N/A' ? `Renews on ${renewal}` : renewal
+        };
+    };
+
+    const planInfo = getPlanDisplayInfo();
+
     const faqs = [
         { q: "How do I upgrade my plan?", a: "You can upgrade your plan at any time from the 'Billing' section of your settings, or by clicking the 'Upgrade Plan' button on this page." },
         { q: "Where can I find my formation documents?", a: "Your official formation documents, like the Articles of Organization and EIN letter, are available for download in the 'Documents' section of your portal." },
@@ -2820,8 +2885,8 @@ const SupportSection = ({ navigate }) => {
                         </h2>
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-indigo-50 rounded-xl border border-indigo-200">
                             <div>
-                                <h3 className="text-2xl font-extrabold text-indigo-700">Vitals Plan</h3>
-                                <p className="text-sm text-gray-600">($1,999/year) - Renews on Aug 15, 2025</p>
+                                <h3 className="text-2xl font-extrabold text-indigo-700">{planInfo.name}</h3>
+                                <p className="text-sm text-gray-600">({planInfo.price}) - {planInfo.renewal}</p>
                             </div>
                             <Button onClick={() => navigate('pricing')} className="mt-4 sm:mt-0">Upgrade Plan</Button>
                         </div>

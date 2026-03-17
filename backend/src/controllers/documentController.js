@@ -37,6 +37,7 @@ const normalizeDocumentType = (value) => {
     .replace(/[\s-]+/g, '_')
     .toLowerCase();
   if (snake === 'proofofaddress') return 'proof_of_address';
+  if (snake === 'bank_statements') return 'bank_statement';
   return snake;
 };
 

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, useActionStat
 import Image from 'next/image';
 import { 
     LayoutGrid, Building, Folder, Calendar, PiggyBank, Sparkles, Users, Settings, User, CheckCircle, Hourglass, 
-    ChevronRight, Bell, Mail, Bot, LifeBuoy, X, FileText, Upload, Clock, Briefcase, DollarSign, Zap, PhoneCall, 
+    ChevronRight, Mail, Bot, LifeBuoy, X, FileText, Upload, Clock, Briefcase, DollarSign, Zap, PhoneCall, 
     Link, CreditCard, Menu, Globe, Clock4, Shield, BookOpen, MessageCircle, BarChart3, TrendingUp, Handshake, Gift, 
     ShoppingCart, Calculator, MapPin, ChevronLeft, Award, RefreshCw, Key, ShieldCheck, TrendingDown, Clock3, ListChecks,
     ChevronDown, CreditCard as CardIcon, Plus, FileCheck, Landmark, Loader2, SendHorizontal, MailQuestion, Phone, Video, HelpCircle, UserCog, Lock, ToggleLeft, ToggleRight, Search, Sun, Moon, ArrowRight, BookUser, Banknote
@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ProfitAndLossReport } from '@/components/dashboard/pnl-report';
+import { NotificationsMenu } from '@/components/notifications/notifications-menu';
 import { useToast } from '@/hooks/use-toast';
 import { API_BASE_URL } from '@/lib/api-base';
 import axios from 'axios';
@@ -3748,7 +3749,7 @@ export default function PortalPage({ onLogout }) {
                         {navItems.flatMap(i => i.subItems ? [i, ...i.subItems] : [i]).find(i => i.path === activePath)?.name || 'Dashboard'}
                     </h1>
                     <div className="flex items-center space-x-4">
-                        <Bell className="w-5 h-5 text-gray-500 hover:text-blue-600 cursor-pointer transition" />
+                        <NotificationsMenu />
                         <User className="w-5 h-5 text-gray-500 hover:text-blue-600 cursor-pointer transition" />
                         <button onClick={onLogout} className="px-3 py-1 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition duration-150 shadow-md">
                             Logout

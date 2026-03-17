@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { NotificationsMenu } from "@/components/notifications/notifications-menu";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
@@ -2559,6 +2560,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <NotificationsMenu />
                 <span className="hidden text-sm text-gray-500 sm:block">{d(new Date().toISOString())}</span>
                 <Button
                   className="bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm"

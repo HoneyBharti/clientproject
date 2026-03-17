@@ -7,9 +7,28 @@ const generateOrderNumber = () => {
   return 'ORD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 };
 
+const normalizePlanName = (value) => {
+  if (!value) return undefined;
+  const trimmed = String(value).trim();
+  if (!trimmed) return undefined;
+  const key = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (key === 'allinone') return 'AllInOne';
+  if (key === 'startup') return 'Startup';
+  if (key === 'formation') return 'Formation';
+  if (key === 'compliance') return 'Compliance';
+  if (key === 'micro') return 'Micro';
+  if (key === 'vitals') return 'Vitals';
+  if (key === 'elite') return 'Elite';
+  if (key === 'starter') return 'Starter';
+  if (key === 'growth') return 'Growth';
+  if (key === 'scale') return 'Scale';
+  return trimmed;
+};
+
 exports.createPaymentIntent = async (req, res) => {
   try {
     const { amount, plan, serviceId } = req.body;
+    const normalizedPlan = normalizePlanName(plan);
 
     if (!req.user.stripeCustomerId) {
       const customer = await stripe.customers.create({
@@ -26,7 +45,7 @@ exports.createPaymentIntent = async (req, res) => {
       customer: req.user.stripeCustomerId,
       metadata: {
         userId: req.user._id.toString(),
-        plan: plan || '',
+        plan: normalizedPlan || '',
         serviceId: serviceId || ''
       }
     });
@@ -35,7 +54,7 @@ exports.createPaymentIntent = async (req, res) => {
       user: req.user._id,
       stripePaymentId: paymentIntent.id,
       amount,
-      plan,
+      plan: normalizedPlan,
       status: 'pending',
       metadata: { serviceId }
     });
@@ -55,7 +74,7 @@ exports.createCheckoutSession = async (req, res) => {
   try {
     const { amount, plan, country, state, entityType, serviceType, serviceName, serviceId } = req.body;
     const numericAmount = Number(amount);
-    const planValue = plan && String(plan).trim() ? String(plan).trim() : undefined;
+    const planValue = normalizePlanName(plan);
     const resolvedServiceName = serviceName && String(serviceName).trim() ? String(serviceName).trim() : planValue || 'Service';
 
     if (!numericAmount || Number.isNaN(numericAmount) || numericAmount <= 0) {
@@ -202,7 +221,7 @@ exports.handleWebhook = async (req, res) => {
 
 async function handleCheckoutComplete(session) {
   const userId = session.metadata?.userId;
-  const plan = session.metadata?.plan;
+    const plan = normalizePlanName(session.metadata?.plan);
   const sessionId = session.id;
   const allowedPlans = new Set(['Starter', 'Growth', 'Scale', 'Micro', 'Vitals', 'Elite', 'Formation', 'Compliance', 'AllInOne', 'Startup']);
   const allowedServiceTypes = new Set(['formation', 'accounting', 'bookkeeping', 'tax-compliance', 'payroll', 'virtual-cfo', 'annual-compliance', 'audit-support']);

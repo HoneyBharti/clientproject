@@ -34,7 +34,7 @@ const buildS3Key = ({ userId, fileName, source, taxFilingId }) => {
   return `documents/${userId}/${sourceFolder}/${scopeFolder}/${year}/${month}/${Date.now()}_${randomUUID()}_${safeName}`;
 };
 
-const storeDocument = async ({ userId, source, status, fileName, mimeType, buffer, uploadedBy, taxFilingId }) => {
+const storeDocument = async ({ userId, source, status, fileName, mimeType, buffer, uploadedBy, taxFilingId, folder, subfolder, documentType }) => {
   const key = buildS3Key({ userId, fileName, source, taxFilingId });
   const { bucket, region } = await uploadToS3({ buffer, key, contentType: mimeType });
 
@@ -51,6 +51,9 @@ const storeDocument = async ({ userId, source, status, fileName, mimeType, buffe
     s3Bucket: bucket,
     s3Key: key,
     s3Region: region,
+    folder: folder || 'KYC',
+    subfolder,
+    documentType,
   });
 };
 

@@ -20,6 +20,12 @@ import {
   Download,
   User,
   Shield,
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  Table,
+  Grid3X3,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
@@ -32,7 +38,10 @@ interface DocumentFile {
   size?: number;
   uploadDate?: string;
   status?: string;
-  folder: 'client' | 'team';
+  folder?: string;
+  subfolder?: string;
+  documentType?: string;
+  source: 'client_uploads' | 'legal_docs';
 }
 
 const toBase64 = (file: File) =>
@@ -77,6 +86,8 @@ export function CompanyDocuments() {
   const [documents, setDocuments] = useState<DocumentFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [targetUserId, setTargetUserId] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'folders'>('folders');
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['KYC', 'Compliance']));
 
   const { user: authUser } = useAuth();
   const isAdmin = authUser?.role === 'admin';
@@ -150,7 +161,10 @@ export function CompanyDocuments() {
         const fetchedDocs: DocumentFile[] = (data.documents || []).map((doc: any) => ({
           id: doc.id,
           name: doc.name,
-          folder: doc.source === 'client_uploads' ? 'client' : 'team',
+          folder: doc.folder || 'KYC',
+          subfolder: doc.subfolder,
+          documentType: doc.documentType,
+          source: doc.source,
           size: doc.size,
           status: doc.status,
           uploadDate: doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : undefined,
@@ -182,6 +196,35 @@ export function CompanyDocuments() {
     fetchDocuments();
   }, [isAdmin, targetUserId, fetchDocuments]);
 
+  const toggleFolder = (folderName: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(folderName)) {
+      newExpanded.delete(folderName);
+    } else {
+      newExpanded.add(folderName);
+    }
+    setExpandedFolders(newExpanded);
+  };
+
+  const getFolderStructure = (sourceDocs: DocumentFile[]) => {
+    const structure: { [key: string]: { [key: string]: DocumentFile[] } } = {};
+
+    sourceDocs.forEach(doc => {
+      const folder = doc.folder || 'KYC';
+      const subfolder = doc.subfolder || 'General';
+
+      if (!structure[folder]) {
+        structure[folder] = {};
+      }
+      if (!structure[folder][subfolder]) {
+        structure[folder][subfolder] = [];
+      }
+      structure[folder][subfolder].push(doc);
+    });
+
+    return structure;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
@@ -209,6 +252,9 @@ export function CompanyDocuments() {
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         fileDataBase64,
+        folder: 'KYC', // Default folder for user uploads
+        subfolder: 'General', // Default subfolder
+        documentType: 'other', // Default document type
       };
 
       const endpoint = isAdmin
@@ -254,66 +300,191 @@ export function CompanyDocuments() {
     }
   };
 
-  const renderFileList = (title: string, docs: DocumentFile[], folderType: 'client' | 'team', isLoadingList: boolean) => {
-    const folderDocs = docs.filter((d) => d.folder === folderType);
-    const Icon = folderType === 'client' ? User : FolderDown;
-    const iconColor = folderType === 'client' ? 'text-green-500' : 'text-indigo-500';
+  const renderDocumentRow = (doc: DocumentFile) => (
+    <tr key={doc.id} className="border-b hover:bg-gray-50">
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <FileText className="h-5 w-5 text-gray-400" />
+          <div>
+            <button
+              type="button"
+              onClick={() => openDocument(doc, 'view')}
+              className="font-medium text-blue-600 hover:text-blue-800 hover:underline text-left"
+            >
+              {doc.name}
+            </button>
+            <div className="text-sm text-gray-500">
+              {doc.documentType && <span className="mr-2">Type: {doc.documentType}</span>}
+              {doc.uploadDate && <span>Uploaded: {doc.uploadDate}</span>}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600">
+        {doc.folder}/{doc.subfolder}
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600">
+        {formatSizeMb(doc.size)}
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600">
+        <span className={`px-2 py-1 rounded-full text-xs ${
+          doc.status === 'approved' ? 'bg-green-100 text-green-800' :
+          doc.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+          'bg-gray-100 text-gray-800'
+        }`}>
+          {doc.status || 'Unknown'}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => openDocument(doc, 'view')}>
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => openDocument(doc, 'download')}>
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+
+  const renderFolderSection = (title: string, sourceDocs: DocumentFile[]) => {
+    const folderStructure = getFolderStructure(sourceDocs);
 
     return (
-      <div className="mt-6">
-        <h4 className="mb-4 flex items-center gap-2 font-medium">
-          <Icon className={`h-5 w-5 ${iconColor}`} />
-          {title}
-        </h4>
-        {isLoadingList ? (
-          <div className="flex items-center justify-center p-8">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : folderDocs.length > 0 ? (
-          <ul className="space-y-2">
-            {folderDocs.map((doc) => (
-              <li
-                key={doc.id}
-                className="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50"
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <FileText className="h-6 w-6 flex-shrink-0 text-muted-foreground" />
-                  <div className="truncate">
-                    <button
-                      type="button"
-                      onClick={() => openDocument(doc, 'view')}
-                      className="truncate font-medium hover:underline text-left"
-                    >
-                      {doc.name}
-                    </button>
-                    {doc.uploadDate && (
-                      <p className="text-sm text-muted-foreground">
-                        {formatSizeMb(doc.size)} - Uploaded on {doc.uploadDate}
-                      </p>
-                    )}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+          <span>{title}</span>
+          <span className="text-xs text-gray-500">({sourceDocs.length})</span>
+        </div>
+        {Object.entries(folderStructure).map(([folderName, subfolders]) => (
+          <div key={folderName} className="border rounded-lg">
+            <button
+              onClick={() => toggleFolder(folderName)}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                {expandedFolders.has(folderName) ? (
+                  <FolderOpen className="h-5 w-5 text-blue-600" />
+                ) : (
+                  <Folder className="h-5 w-5 text-blue-600" />
+                )}
+                <span className="font-medium text-gray-900">{folderName}</span>
+                <span className="text-sm text-gray-500">
+                  ({Object.values(subfolders).flat().length} documents)
+                </span>
+              </div>
+              {expandedFolders.has(folderName) ? (
+                <ChevronDown className="h-4 w-4 text-gray-400" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+              )}
+            </button>
+
+            {expandedFolders.has(folderName) && (
+              <div className="border-t">
+                {Object.entries(subfolders).map(([subfolderName, docs]) => (
+                  <div key={subfolderName} className="border-b last:border-b-0">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 border-l-4 border-blue-200">
+                      <Folder className="h-4 w-4 text-blue-400" />
+                      <span className="text-sm font-medium text-gray-700">{subfolderName}</span>
+                      <span className="text-xs text-gray-500">({docs.length} files)</span>
+                    </div>
+                    <div className="pl-8 pr-4 pb-2">
+                      {docs.length > 0 ? (
+                        <div className="space-y-2">
+                          {docs.map((doc) => (
+                            <div key={doc.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openDocument(doc, 'view')}
+                                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline truncate block"
+                                  >
+                                    {doc.name}
+                                  </button>
+                                  <div className="text-xs text-gray-500">
+                                    {doc.documentType && <span>Type: {doc.documentType} • </span>}
+                                    {formatSizeMb(doc.size)} • {doc.uploadDate}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 ml-2">
+                                <Button variant="ghost" size="sm" onClick={() => openDocument(doc, 'view')}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => openDocument(doc, 'download')}>
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-gray-400 text-sm">
+                          No documents in this folder
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" onClick={() => openDocument(doc, 'view')}>
-                    <Eye className="h-4 w-4" />
-                    <span className="sr-only">View {doc.name}</span>
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => openDocument(doc, 'download')}>
-                    <Download className="h-4 w-4" />
-                    <span className="sr-only">Download {doc.name}</span>
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="rounded-md border-2 border-dashed p-8 text-center">
-            <p className="text-muted-foreground">No documents found in this folder.</p>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {Object.keys(folderStructure).length === 0 && !isLoading && (
+          <div className="text-center py-8 text-gray-500">
+            No documents found.
           </div>
         )}
       </div>
     );
   };
+
+  const renderFolderView = () => {
+    const clientDocs = documents.filter((doc) => doc.source === 'client_uploads');
+    const legalDocs = documents.filter((doc) => doc.source === 'legal_docs');
+
+    return (
+      <div className="space-y-6">
+        {renderFolderSection('Client Uploaded Documents', clientDocs)}
+        {renderFolderSection('YourLegal Documents', legalDocs)}
+      </div>
+    );
+  };
+
+  const renderTableSection = (title: string, sourceDocs: DocumentFile[]) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        <span>{title}</span>
+        <span className="text-xs text-gray-500">({sourceDocs.length})</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium text-gray-700">Document</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-700">Location</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-700">Size</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-700">Status</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sourceDocs.map(renderDocumentRow)}
+          </tbody>
+        </table>
+        {sourceDocs.length === 0 && !isLoading && (
+          <div className="text-center py-8 text-gray-500">
+            No documents found.
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <Card>
@@ -322,14 +493,34 @@ export function CompanyDocuments() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              <span>Company Documents</span>
+              <span>My Documents</span>
             </CardTitle>
             <CardDescription>
               {isAdmin
                 ? 'Backend Portal: Manage documents for any client.'
-                : 'Upload your documents and view files from the YourLegal team.'}
+                : 'View and manage your uploaded documents in organized folders.'}
             </CardDescription>
           </div>
+          {!isAdmin && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant={viewMode === 'folders' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('folders')}
+              >
+                <Grid3X3 className="h-4 w-4 mr-2" />
+                Folders
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('table')}
+              >
+                <Table className="h-4 w-4 mr-2" />
+                Table
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 border-t pt-4">
@@ -361,7 +552,7 @@ export function CompanyDocuments() {
               <Input id="file-upload" type="file" onChange={handleFileChange} className="flex-1" disabled={isUploading} />
               <Button onClick={handleUpload} disabled={!file || isUploading}>
                 {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                Upload Your Document
+                Upload Document
               </Button>
             </div>
           )}
@@ -375,11 +566,18 @@ export function CompanyDocuments() {
           </div>
         )}
 
-        {!isAdmin || targetUserId ? (
-          <>
-            {renderFileList('Client Uploaded Documents', documents, 'client', isLoading)}
-            {renderFileList('Official Documents from YourLegal', documents, 'team', isLoading)}
-          </>
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="ml-3 text-muted-foreground">Loading documents...</p>
+          </div>
+        ) : (!isAdmin || targetUserId) ? (
+          viewMode === 'table' ? (
+            <div className="space-y-6">
+              {renderTableSection('Client Uploaded Documents', documents.filter((doc) => doc.source === 'client_uploads'))}
+              {renderTableSection('YourLegal Documents', documents.filter((doc) => doc.source === 'legal_docs'))}
+            </div>
+          ) : renderFolderView()
         ) : (
           <div className="mt-6 rounded-md border-2 border-dashed p-8 text-center">
             <p className="text-muted-foreground">Enter a client User ID above to begin managing their documents.</p>

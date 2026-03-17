@@ -79,13 +79,33 @@ exports.createTaxFiling = async (req, res) => {
       return res.status(404).json({ message: 'Company not found.' });
     }
 
+    const normalized = {
+      filingName: String(filingName || '').trim(),
+      filingType: String(filingType || '').trim(),
+      taxYear: String(taxYear || '').trim(),
+      jurisdiction: String(jurisdiction || '').trim(),
+    };
+
+    const duplicate = await TaxFiling.findOne({
+      company: company._id,
+      filingName: normalized.filingName,
+      filingType: normalized.filingType,
+      taxYear: normalized.taxYear,
+      jurisdiction: normalized.jurisdiction,
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+    });
+
+    if (duplicate) {
+      return res.status(409).json({ message: 'Duplicate filing exists for the same company, year, and due date.' });
+    }
+
     const filing = await TaxFiling.create({
       company: company._id,
       user: company.user,
-      filingName,
-      filingType,
-      taxYear,
-      jurisdiction,
+      filingName: normalized.filingName,
+      filingType: normalized.filingType,
+      taxYear: normalized.taxYear,
+      jurisdiction: normalized.jurisdiction,
       dueDate,
       assignedAdmin: assignedAdmin || null,
       notes,
@@ -107,11 +127,54 @@ exports.createTaxFiling = async (req, res) => {
 
 exports.updateTaxFiling = async (req, res) => {
   try {
-    const filing = await TaxFiling.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const existing = await TaxFiling.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Tax filing not found.' });
+    }
+
+    const nextCompany = req.body.companyId || req.body.company || existing.company;
+    const nextFields = {
+      filingName: req.body.filingName ?? existing.filingName,
+      filingType: req.body.filingType ?? existing.filingType,
+      taxYear: req.body.taxYear ?? existing.taxYear,
+      jurisdiction: req.body.jurisdiction ?? existing.jurisdiction,
+      dueDate: req.body.dueDate ?? existing.dueDate,
+    };
+    const normalized = {
+      filingName: String(nextFields.filingName || '').trim(),
+      filingType: String(nextFields.filingType || '').trim(),
+      taxYear: String(nextFields.taxYear || '').trim(),
+      jurisdiction: String(nextFields.jurisdiction || '').trim(),
+      dueDate: nextFields.dueDate ? new Date(nextFields.dueDate) : undefined,
+    };
+
+    const duplicate = await TaxFiling.findOne({
+      _id: { $ne: existing._id },
+      company: nextCompany,
+      filingName: normalized.filingName,
+      filingType: normalized.filingType,
+      taxYear: normalized.taxYear,
+      jurisdiction: normalized.jurisdiction,
+      dueDate: normalized.dueDate,
+    });
+
+    if (duplicate) {
+      return res.status(409).json({ message: 'Duplicate filing exists for the same company, year, and due date.' });
+    }
+
+    const updatePayload = {
+      ...req.body,
+      filingName: normalized.filingName,
+      filingType: normalized.filingType,
+      taxYear: normalized.taxYear,
+      jurisdiction: normalized.jurisdiction,
+    };
+    if (req.body.companyId) {
+      updatePayload.company = req.body.companyId;
+      delete updatePayload.companyId;
+    }
+
+    const filing = await TaxFiling.findByIdAndUpdate(req.params.id, updatePayload, { new: true, runValidators: true });
     if (!filing) {
       return res.status(404).json({ message: 'Tax filing not found.' });
     }
@@ -192,6 +255,22 @@ exports.requestTaxFilingDocuments = async (req, res) => {
     );
 
     res.json({ success: true, filing });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.deleteTaxFiling = async (req, res) => {
+  try {
+    const filing = await TaxFiling.findById(req.params.id);
+    if (!filing) {
+      return res.status(404).json({ message: 'Tax filing not found.' });
+    }
+
+    await Document.updateMany({ taxFiling: filing._id }, { $set: { taxFiling: null } });
+    await TaxFiling.deleteOne({ _id: filing._id });
+
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -2679,7 +2679,7 @@ const TaxesSection = () => {
             </div>
 
             <Dialog open={Boolean(viewFiling)} onOpenChange={(open) => !open && setViewFiling(null)}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{viewFiling?.filingName || 'Tax Filing'}</DialogTitle>
                         <DialogDescription>
@@ -2769,7 +2769,7 @@ const TaxesSection = () => {
                     setUploadError('');
                 }
             }}>
-                <DialogContent className="max-w-lg">
+                <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Upload Documents</DialogTitle>
                         <DialogDescription>

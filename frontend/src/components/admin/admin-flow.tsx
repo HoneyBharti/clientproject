@@ -292,6 +292,9 @@ type LiveAdminDocument = {
   status: DocumentStatus;
   updatedAt: string;
   source: DocumentSource;
+  folder?: string;
+  subfolder?: string;
+  documentType?: string;
 };
 
 const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
@@ -1097,7 +1100,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
         const normalizedPayments: LiveAdminPayment[] = (paymentsData.payments || []).map((payment: any) => ({
           id: String(payment._id),
           userId: String(payment.user?._id || payment.user),
-          plan: payment.plan || "N/A",
+          plan: payment.plan || payment.metadata?.serviceName || payment.metadata?.serviceId || "N/A",
           amount: Number(payment.amount || 0),
           stripePaymentId: payment.stripePaymentId,
           status: payment.status,
@@ -1137,7 +1140,9 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       id: String(order._id || order.id),
       userId: String(order.user?._id || order.user || ""),
       customerName: order.user?.name || "Unknown",
-      serviceType: formatServiceType(order.serviceType || order.plan),
+      serviceType: order.metadata?.serviceName
+        ? order.metadata.serviceName
+        : formatServiceType(order.serviceType || order.plan),
       country: (order.metadata?.country || order.user?.region || "USA") as UserRegion,
       status: mapOrderStatusFromBackend(order.status),
       assignedStaff: order.assignedTo?.name || "Unassigned",
@@ -1267,7 +1272,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
       id: payment.id,
       userId: payment.userId,
       userName: userLookup.get(payment.userId)?.name || "Unknown",
-      plan: payment.plan || "N/A",
+      plan: payment.plan || payment.metadata?.serviceName || payment.metadata?.serviceId || "N/A",
       amount: Number(payment.amount || 0),
       currency: "USD",
       stripePaymentId: payment.stripePaymentId,
@@ -1437,6 +1442,9 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
           status: document.status,
           updatedAt: document.updatedAt || document.uploadedAt,
           source: document.source,
+          folder: document.folder,
+          subfolder: document.subfolder,
+          documentType: document.documentType,
         }));
 
         setLiveUserDocuments((prev) => ({
@@ -1475,16 +1483,45 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     const nextRecords = Object.entries(liveUserDocuments).flatMap(([userId, docs]) => {
       const user = userMap.get(userId);
       if (!docs?.length) return [];
-      return docs.map((doc) => ({
-        id: String(doc.id),
-        client: user?.name || "Unknown",
-        company: user?.companyName || "N/A",
-        document: doc.document,
-        category: (doc.source === "client_uploads" ? "KYC" : "Compliance") as DocumentCategory,
-        source: doc.source,
-        status: doc.status,
-        updatedAt: doc.updatedAt,
-      }));
+      return docs.map((doc) => {
+        // Determine folder based on stored folder or document type
+        let folder = doc.folder;
+        if (!folder && doc.documentType) {
+          if (['passport', 'proof_of_address', 'pan', 'aadhaar', 'photo'].includes(doc.documentType)) {
+            folder = 'KYC';
+          } else if (['bank_statement', 'tax_id', 'prior_tax_return'].includes(doc.documentType)) {
+            folder = 'Compliance';
+          } else if (['certificate_of_incorporation', 'operating_agreement', 'bylaws'].includes(doc.documentType)) {
+            folder = 'Corporate';
+          } else if (['ein_confirmation', 'irs_documents', 'state_filings'].includes(doc.documentType)) {
+            folder = 'Tax';
+          } else if (['bank_account_documents', 'loan_documents'].includes(doc.documentType)) {
+            folder = 'Banking';
+          } else if (['contract', 'nda', 'ip_assignment', 'shareholder_agreement'].includes(doc.documentType)) {
+            folder = 'Legal';
+          }
+        }
+        if (!folder) {
+          folder = doc.source === 'legal_docs' ? 'Compliance' : 'KYC';
+        }
+
+        const categoryFromFolder = (value: string) =>
+          value === "Tax" ? "Tax" : value === "Banking" ? "Banking" : value === "KYC" ? "KYC" : "Compliance";
+
+        return {
+          id: String(doc.id),
+          client: user?.name || "Unknown",
+          company: user?.companyName || "N/A",
+          document: doc.document,
+          category: categoryFromFolder(folder) as DocumentCategory,
+          source: doc.source,
+          status: doc.status,
+          updatedAt: doc.updatedAt,
+          folder: folder,
+          subfolder: doc.subfolder || user?.name || "Unknown",
+          documentType: doc.documentType,
+        };
+      });
     });
 
     nextRecords.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -1654,7 +1691,12 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             id: payment.id,
             userId: payment.userId,
             customerName: selectedUserForUsersView.name,
-            serviceType: payment.plan || payment.metadata?.serviceId || payment.metadata?.entityType || "Service request",
+            serviceType:
+              payment.metadata?.serviceName ||
+              payment.plan ||
+              payment.metadata?.serviceId ||
+              payment.metadata?.entityType ||
+              "Service request",
             status:
               payment.status === "pending"
                 ? "pending"
@@ -1679,7 +1721,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
           .filter((payment) => payment.userId === selectedUserForUsersView.id)
           .map((payment) => ({
             id: payment.id,
-            plan: payment.plan,
+            plan: payment.plan || payment.metadata?.serviceName || payment.metadata?.serviceId || "N/A",
             amount: payment.amount,
             stripePaymentId: payment.stripePaymentId,
             status: payment.status,
@@ -1905,16 +1947,19 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     const uploadedFileName = adminUploadFile.name;
     try {
       const fileDataBase64 = await readFileAsBase64(adminUploadFile);
-      const response = await fetch(`${API_BASE_URL}/documents/admin/user/${selectedClient.id}/upload-official`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          fileName: adminUploadDocumentName.trim() || uploadedFileName,
-          mimeType: adminUploadFile.type || "application/octet-stream",
-          fileDataBase64,
-        }),
-      });
+    const response = await fetch(`${API_BASE_URL}/documents/admin/user/${selectedClient.id}/upload-official`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        fileName: adminUploadDocumentName.trim() || uploadedFileName,
+        mimeType: adminUploadFile.type || "application/octet-stream",
+        fileDataBase64,
+        folder: adminUploadDocumentCategory,
+        subfolder: "Admin Upload",
+        documentType: "other",
+      }),
+    });
       const data = await response.json().catch(() => null);
 
       if (!response.ok || !data?.success) {

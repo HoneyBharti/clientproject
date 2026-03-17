@@ -46,10 +46,14 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sortOption, setSortOption] = useState("dueDate:asc");
+  const [companySearch, setCompanySearch] = useState("");
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [form, setForm] = useState({
     companyId: "",
@@ -92,13 +96,66 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
   const filteredFilings = useMemo(() => {
     return filings.filter((filing) => {
       const matchesStatus = statusFilter === "all" || filing.status === statusFilter;
-      const matchesSearch = [filing.filingName, filing.company?.companyName, filing.taxYear]
+      const matchesSearch = [
+        filing.filingName,
+        filing.filingType,
+        filing.company?.companyName,
+        filing.taxYear,
+        filing.jurisdiction,
+        filing.status,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(search.toLowerCase());
       return matchesStatus && matchesSearch;
     });
   }, [filings, search, statusFilter]);
+
+  const sortedFilings = useMemo(() => {
+    const [key, direction] = sortOption.split(":");
+    const dir = direction === "desc" ? -1 : 1;
+    const compareText = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+    const list = [...filteredFilings];
+    list.sort((a, b) => {
+      if (key === "dueDate") {
+        const aMissing = !a.dueDate;
+        const bMissing = !b.dueDate;
+        if (aMissing && bMissing) return 0;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+        return (new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()) * dir;
+      }
+      if (key === "company") {
+        return compareText(a.company?.companyName || "", b.company?.companyName || "") * dir;
+      }
+      if (key === "taxYear") {
+        return compareText(a.taxYear || "", b.taxYear || "") * dir;
+      }
+      if (key === "status") {
+        return compareText(a.status || "", b.status || "") * dir;
+      }
+      if (key === "filing") {
+        return compareText(a.filingName || "", b.filingName || "") * dir;
+      }
+      if (key === "jurisdiction") {
+        return compareText(a.jurisdiction || "", b.jurisdiction || "") * dir;
+      }
+      return 0;
+    });
+    return list;
+  }, [filteredFilings, sortOption]);
+
+  const filteredCompanies = useMemo(() => {
+    const query = companySearch.trim().toLowerCase();
+    if (!query) return companies;
+    return companies.filter((company) =>
+      [company.companyName, company.state, company.entityType, company.country]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [companies, companySearch]);
 
   const stats = useMemo(() => {
     const total = filings.length;
@@ -185,6 +242,25 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
     await loadFilings();
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await fetchJson(`${TAX_API_BASE}/${deleteTarget._id}`, { method: "DELETE" });
+      setMessage("Filing deleted.");
+      if (selectedFiling?._id === deleteTarget._id) {
+        setSelectedFiling(null);
+        setActiveTab("all");
+      }
+      await loadFilings();
+    } catch (error: any) {
+      setMessage(error?.message || "Unable to delete filing.");
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
+    }
+  };
+
   const openRequestDialog = (filingId: string) => {
     setRequestingId(filingId);
     setRequestMessage("");
@@ -257,6 +333,21 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2">
               <Input placeholder="Search filings..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+              <Select value={sortOption} onValueChange={setSortOption}>
+                <SelectTrigger className="w-[220px]"><SelectValue placeholder="Sort filings" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dueDate:asc">Due date (soonest)</SelectItem>
+                  <SelectItem value="dueDate:desc">Due date (latest)</SelectItem>
+                  <SelectItem value="company:asc">Company (A-Z)</SelectItem>
+                  <SelectItem value="company:desc">Company (Z-A)</SelectItem>
+                  <SelectItem value="filing:asc">Filing name (A-Z)</SelectItem>
+                  <SelectItem value="filing:desc">Filing name (Z-A)</SelectItem>
+                  <SelectItem value="taxYear:desc">Tax year (newest)</SelectItem>
+                  <SelectItem value="taxYear:asc">Tax year (oldest)</SelectItem>
+                  <SelectItem value="status:asc">Status (A-Z)</SelectItem>
+                  <SelectItem value="jurisdiction:asc">Jurisdiction (A-Z)</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
@@ -283,7 +374,7 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredFilings.map((filing) => (
+                {sortedFilings.map((filing) => (
                   <TableRow key={filing._id}>
                     <TableCell>
                       <p className="font-medium">{filing.company?.companyName || "Unknown"}</p>
@@ -316,6 +407,7 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
                         <Button size="sm" variant="outline" onClick={() => handleEdit(filing)}>Edit</Button>
                         <Button size="sm" variant="outline" onClick={() => openRequestDialog(filing._id)}>Request Docs</Button>
                         <Button size="sm" variant="default" onClick={() => handleStatusUpdate(filing._id, "filed")}>Mark Filed</Button>
+                        <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(filing)}>Delete</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -335,11 +427,19 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="space-y-1">
+                <Label>Search Entities</Label>
+                <Input
+                  placeholder="Search by company, state, or type"
+                  value={companySearch}
+                  onChange={(e) => setCompanySearch(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
                 <Label>Company</Label>
                 <Select value={form.companyId} onValueChange={(value) => setForm((prev) => ({ ...prev, companyId: value }))}>
                   <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
                   <SelectContent>
-                    {companies.map((company) => (
+                    {filteredCompanies.map((company) => (
                       <SelectItem key={company._id} value={company._id}>{company.companyName}</SelectItem>
                     ))}
                   </SelectContent>
@@ -445,6 +545,23 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setRequestDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleRequestDocs}>Send Request</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Filing</DialogTitle>
+            <DialogDescription>
+              {deleteTarget ? `Delete "${deleteTarget.filingName}" for ${deleteTarget.company?.companyName || "this company"}? This cannot be undone.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? "Deleting..." : "Delete"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

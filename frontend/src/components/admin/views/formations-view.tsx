@@ -66,9 +66,9 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
   const resolveCurrentStep = (progress: any, order: string[]) =>
     order.find((key) => progress?.[key]?.status !== "completed") || order[order.length - 1];
 
-  const handleProgressUpdate = async (formationId: string, section: string, step: string) => {
+  const handleProgressUpdate = async (formationId: string, section: string, step: string, status: string = "completed") => {
     if (!updateFormationProgress) return;
-    await updateFormationProgress(formationId, section, step, "completed");
+    await updateFormationProgress(formationId, section, step, status);
   };
 
   const openEditDetails = (formation: any) => {
@@ -222,14 +222,19 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
                         defaultValue=""
                         onChange={(e) => {
                           if (e.target.value) {
-                            handleProgressUpdate(formation.id, "formationProgress", e.target.value);
+                            const [action, step] = e.target.value.split(':');
+                            const status = action === 'complete' ? 'completed' : 'pending';
+                            handleProgressUpdate(formation.id, "formationProgress", step, status);
                             e.currentTarget.value = "";
                           }
                         }}
                       >
-                        <option value="" disabled>Mark step completed</option>
+                        <option value="" disabled>Update progress</option>
                         {formationStepOrder.map((step) => (
-                          <option key={step} value={step}>Complete {formationStepLabels[step]}</option>
+                          <option key={`complete:${step}`} value={`complete:${step}`}>✓ Complete {formationStepLabels[step]}</option>
+                        ))}
+                        {formationStepOrder.map((step) => (
+                          <option key={`unmark:${step}`} value={`unmark:${step}`}>✗ Unmark {formationStepLabels[step]}</option>
                         ))}
                       </select>
                     </div>
@@ -242,14 +247,19 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
                         defaultValue=""
                         onChange={(e) => {
                           if (e.target.value) {
-                            handleProgressUpdate(formation.id, "einProgress", e.target.value);
+                            const [action, step] = e.target.value.split(':');
+                            const status = action === 'complete' ? 'completed' : 'pending';
+                            handleProgressUpdate(formation.id, "einProgress", step, status);
                             e.currentTarget.value = "";
                           }
                         }}
                       >
-                        <option value="" disabled>Mark step completed</option>
+                        <option value="" disabled>Update progress</option>
                         {einStepOrder.map((step) => (
-                          <option key={step} value={step}>Complete {einStepLabels[step]}</option>
+                          <option key={`complete:${step}`} value={`complete:${step}`}>✓ Complete {einStepLabels[step]}</option>
+                        ))}
+                        {einStepOrder.map((step) => (
+                          <option key={`unmark:${step}`} value={`unmark:${step}`}>✗ Unmark {einStepLabels[step]}</option>
                         ))}
                       </select>
                     </div>
@@ -262,14 +272,19 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
                         defaultValue=""
                         onChange={(e) => {
                           if (e.target.value) {
-                            handleProgressUpdate(formation.id, "initialCompliance", e.target.value);
+                            const [action, step] = e.target.value.split(':');
+                            const status = action === 'complete' ? 'completed' : 'pending';
+                            handleProgressUpdate(formation.id, "initialCompliance", step, status);
                             e.currentTarget.value = "";
                           }
                         }}
                       >
-                        <option value="" disabled>Mark step completed</option>
+                        <option value="" disabled>Update progress</option>
                         {complianceStepOrder.map((step) => (
-                          <option key={step} value={step}>Complete {complianceStepLabels[step]}</option>
+                          <option key={`complete:${step}`} value={`complete:${step}`}>✓ Complete {complianceStepLabels[step]}</option>
+                        ))}
+                        {complianceStepOrder.map((step) => (
+                          <option key={`unmark:${step}`} value={`unmark:${step}`}>✗ Unmark {complianceStepLabels[step]}</option>
                         ))}
                       </select>
                     </div>

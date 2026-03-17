@@ -204,12 +204,19 @@ async function handleCheckoutComplete(session) {
   const userId = session.metadata?.userId;
   const plan = session.metadata?.plan;
   const sessionId = session.id;
+  const allowedPlans = new Set(['Starter', 'Growth', 'Scale', 'Micro', 'Vitals', 'Elite', 'Formation', 'Compliance', 'AllInOne', 'Startup']);
+  const allowedServiceTypes = new Set(['formation', 'accounting', 'bookkeeping', 'tax-compliance', 'payroll', 'virtual-cfo', 'annual-compliance', 'audit-support']);
+  const planValue = plan && allowedPlans.has(plan) ? plan : undefined;
+  const serviceTypeValue = session.metadata?.serviceType && allowedServiceTypes.has(session.metadata.serviceType)
+    ? session.metadata.serviceType
+    : 'formation';
+  const serviceName = session.metadata?.serviceName?.trim() || planValue || 'Service';
 
   // Only update user if authenticated (not guest)
   if (userId && userId !== 'guest') {
     const updates = {};
-    if (plan) {
-      updates.servicePlan = plan;
+    if (planValue) {
+      updates.servicePlan = planValue;
       updates.status = 'active';
       updates.subscriptionStatus = 'active';
     }
@@ -217,38 +224,77 @@ async function handleCheckoutComplete(session) {
       await User.findByIdAndUpdate(userId, updates);
     }
 
-    const payment = await Payment.findOne({ stripePaymentId: sessionId });
+    let payment = await Payment.findOne({ stripePaymentId: sessionId });
     if (payment) {
       payment.status = 'succeeded';
       payment.amount = (session.amount_total || 0) / 100;
       payment.metadata = {
         ...(payment.metadata || {}),
+        serviceName,
+        serviceId: session.metadata?.serviceId,
+        serviceType: serviceTypeValue,
         country: session.metadata?.country,
         state: session.metadata?.state,
         entityType: session.metadata?.entityType,
         paymentIntentId: session.payment_intent,
       };
+      if (planValue && !payment.plan) {
+        payment.plan = planValue;
+      }
       await payment.save();
-
-      // Update associated order to confirmed
-      await Order.findOneAndUpdate(
-        { payment: payment._id },
-        { status: 'confirmed' }
-      );
     } else {
-      await Payment.create({
+      const paymentPayload = {
         user: userId,
         stripePaymentId: sessionId,
         amount: (session.amount_total || 0) / 100,
-        plan,
+        plan: planValue,
         status: 'succeeded',
         metadata: {
+          serviceName,
+          serviceId: session.metadata?.serviceId,
+          serviceType: serviceTypeValue,
           country: session.metadata?.country,
           state: session.metadata?.state,
           entityType: session.metadata?.entityType,
           paymentIntentId: session.payment_intent,
         },
-      });
+      };
+
+      if (!planValue) {
+        delete paymentPayload.plan;
+      }
+
+      payment = await Payment.create(paymentPayload);
+    }
+
+    if (payment) {
+      const existingOrder = await Order.findOne({ payment: payment._id });
+      if (existingOrder) {
+        await Order.findByIdAndUpdate(existingOrder._id, { status: 'confirmed' });
+      } else {
+        const orderPayload = {
+          user: userId,
+          orderNumber: generateOrderNumber(),
+          serviceType: serviceTypeValue,
+          plan: planValue,
+          status: 'confirmed',
+          amount: (session.amount_total || 0) / 100,
+          payment: payment._id,
+          metadata: {
+            serviceName,
+            serviceId: session.metadata?.serviceId,
+            country: session.metadata?.country,
+            state: session.metadata?.state,
+            entityType: session.metadata?.entityType,
+          },
+        };
+
+        if (!planValue) {
+          delete orderPayload.plan;
+        }
+
+        await Order.create(orderPayload);
+      }
     }
   } else {
     // Guest checkout - just log the payment

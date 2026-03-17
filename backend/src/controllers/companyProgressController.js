@@ -16,6 +16,13 @@ const resolveSection = (formation, section) => {
   return null;
 };
 
+// Define step orders for cascading completion
+const stepOrders = {
+  formationProgress: ['nameCheck', 'filingPrep', 'stateFiling', 'approved'],
+  einProgress: ['ss4Application', 'irsSubmission', 'processing', 'allotment'],
+  initialCompliance: ['operatingAgreement', 'initialResolutions', 'boiReport', 'goodStanding']
+};
+
 const isAdmin = (req) => req.user && req.user.role === 'admin';
 
 exports.getCompanyProgress = async (req, res) => {
@@ -66,12 +73,34 @@ exports.updateCompanyProgress = async (req, res) => {
       return res.status(400).json({ message: 'Invalid step.' });
     }
 
+    const stepOrder = stepOrders[section];
+    if (!stepOrder) {
+      return res.status(400).json({ message: 'Invalid section for cascading logic.' });
+    }
+
+    const stepIndex = stepOrder.indexOf(step);
+    if (stepIndex === -1) {
+      return res.status(400).json({ message: 'Step not found in order.' });
+    }
+
     if (status === 'completed') {
-      progressSection[step].status = 'completed';
-      progressSection[step].completedAt = new Date();
+      // Mark all previous steps as completed
+      for (let i = 0; i <= stepIndex; i++) {
+        const currentStep = stepOrder[i];
+        if (progressSection[currentStep]) {
+          progressSection[currentStep].status = 'completed';
+          progressSection[currentStep].completedAt = new Date();
+        }
+      }
     } else if (status === 'pending') {
-      progressSection[step].status = 'pending';
-      progressSection[step].completedAt = null;
+      // Mark this step and all subsequent steps as pending
+      for (let i = stepIndex; i < stepOrder.length; i++) {
+        const currentStep = stepOrder[i];
+        if (progressSection[currentStep]) {
+          progressSection[currentStep].status = 'pending';
+          progressSection[currentStep].completedAt = null;
+        }
+      }
     } else {
       return res.status(400).json({ message: 'Invalid status value.' });
     }

@@ -16,6 +16,9 @@ const toDocumentResponse = (doc, req) => {
     size: doc.size,
     source: doc.source,
     status: doc.status,
+    folder: doc.folder,
+    subfolder: doc.subfolder,
+    documentType: doc.documentType,
     uploadedAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     reviewedAt: doc.reviewedAt,
@@ -25,6 +28,11 @@ const toDocumentResponse = (doc, req) => {
 };
 
 const validateObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
+
+const normalizeDocumentType = (value) => {
+  if (!value) return undefined;
+  return String(value).trim().toLowerCase().replace(/\s+/g, '_');
+};
 
 exports.getMyDocuments = async (req, res) => {
   try {
@@ -43,7 +51,7 @@ exports.getMyDocuments = async (req, res) => {
 
 exports.uploadMyDocument = async (req, res) => {
   try {
-    const { fileName, mimeType, fileDataBase64 } = req.body;
+    const { fileName, mimeType, fileDataBase64, folder, subfolder, documentType } = req.body;
 
     if (!fileName || !mimeType || !fileDataBase64) {
       return res.status(400).json({ message: 'fileName, mimeType, and fileDataBase64 are required.' });
@@ -65,6 +73,9 @@ exports.uploadMyDocument = async (req, res) => {
       mimeType,
       buffer,
       uploadedBy: req.user._id,
+      folder: folder || 'KYC',
+      subfolder,
+      documentType: normalizeDocumentType(documentType),
     });
 
     res.status(201).json({
@@ -99,7 +110,7 @@ exports.getUserDocumentsAsAdmin = async (req, res) => {
 exports.uploadOfficialDocumentAsAdmin = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { fileName, mimeType, fileDataBase64 } = req.body;
+    const { fileName, mimeType, fileDataBase64, folder, subfolder, documentType } = req.body;
 
     if (!validateObjectId(userId)) {
       return res.status(400).json({ message: 'Invalid user ID.' });
@@ -129,6 +140,9 @@ exports.uploadOfficialDocumentAsAdmin = async (req, res) => {
       mimeType,
       buffer,
       uploadedBy: req.user._id,
+      folder: folder || 'Compliance',
+      subfolder,
+      documentType: normalizeDocumentType(documentType),
     });
 
     res.status(201).json({

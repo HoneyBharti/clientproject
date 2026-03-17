@@ -591,7 +591,13 @@ function OnboardingPageContent() {
         
         for (const [docType, file] of Object.entries(docs)) {
           if (file) {
-            const uploadedDoc = await uploadSingleDocument(file, `${stakeholder.name || `Stakeholder ${i + 1}`} - ${docType}`);
+            const uploadedDoc = await uploadSingleDocument(
+              file, 
+              `${stakeholder.name || `Stakeholder ${i + 1}`} - ${docType}`,
+              'KYC',
+              stakeholder.name || `Stakeholder ${i + 1}`,
+              docType
+            );
             if (uploadedDoc) {
               uploadedDocs.push({
                 stakeholderIndex: i,
@@ -609,7 +615,13 @@ function OnboardingPageContent() {
       const bookkeepingDocs = formData.bookkeeping.documents;
       for (const [docType, file] of Object.entries(bookkeepingDocs)) {
         if (file) {
-          const uploadedDoc = await uploadSingleDocument(file, `Bookkeeping - ${docType}`);
+          const uploadedDoc = await uploadSingleDocument(
+            file, 
+            `Bookkeeping - ${docType}`,
+            'Compliance',
+            'Bookkeeping',
+            docType
+          );
           if (uploadedDoc) {
             uploadedDocs.push({
               documentType: docType,
@@ -627,7 +639,7 @@ function OnboardingPageContent() {
     }
   };
   
-  const uploadSingleDocument = async (file, fileName) => {
+  const uploadSingleDocument = async (file, fileName, folder, subfolder, documentType) => {
     try {
       const fileDataBase64 = await readFileAsBase64(file);
       
@@ -639,6 +651,9 @@ function OnboardingPageContent() {
           fileName: fileName,
           mimeType: file.type,
           fileDataBase64: fileDataBase64,
+          folder: folder,
+          subfolder: subfolder,
+          documentType: documentType,
         }),
       });
       

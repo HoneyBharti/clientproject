@@ -96,7 +96,7 @@ export function ClientDocumentsModal({ ctx }: { ctx: AdminViewContext }) {
         }
       }}
     >
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Client Documents</DialogTitle>
           <DialogDescription>

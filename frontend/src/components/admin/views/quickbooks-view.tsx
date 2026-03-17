@@ -21,7 +21,6 @@ export function QuickbooksView({ ctx }: { ctx: AdminViewContext }) {
     dt,
     setQuickBooksStateForSelected,
     qbActionMessage,
-    quickBooksModules,
   } = ctx;
 
   return (
@@ -101,19 +100,7 @@ export function QuickbooksView({ ctx }: { ctx: AdminViewContext }) {
             <p className="text-muted-foreground">No records for this filter.</p>
           )}
 
-          <div className="space-y-2 pt-2">
-            <p className="text-xs font-medium text-muted-foreground">API Coverage (from backend functions)</p>
-            {quickBooksModules.map((mod: any) => (
-              <div key={mod.id} className="rounded border p-2">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium">{mod.label}</p>
-                  <Badge className={cn("border", mod.status === "active" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200")}>{mod.status}</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{mod.endpoints} endpoints</p>
-                <p className="text-xs text-muted-foreground">Verified: {dt(mod.lastVerifiedAt)}</p>
-              </div>
-            ))}
-          </div>
+          
         </CardContent>
       </Card>
     </div>

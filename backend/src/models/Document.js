@@ -35,6 +35,31 @@ const documentSchema = new mongoose.Schema(
       default: 'pending',
       index: true,
     },
+    // Folder structure fields
+    folder: {
+      type: String,
+      enum: ['KYC', 'Compliance', 'Tax', 'Banking', 'Legal', 'Corporate'],
+      default: 'KYC',
+      index: true,
+    },
+    subfolder: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    documentType: {
+      type: String,
+      enum: [
+        'passport', 'proof_of_address', 'pan', 'aadhaar', 'photo',
+        'bank_statement', 'tax_id', 'prior_tax_return',
+        'certificate_of_incorporation', 'operating_agreement', 'bylaws',
+        'ein_confirmation', 'irs_documents', 'state_filings',
+        'bank_account_documents', 'loan_documents',
+        'contract', 'nda', 'ip_assignment', 'shareholder_agreement',
+        'other'
+      ],
+      index: true,
+    },
     data: {
       type: Buffer,
       required: false,

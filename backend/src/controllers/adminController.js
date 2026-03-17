@@ -237,6 +237,9 @@ exports.createUserAsAdmin = async (req, res) => {
   try {
     const { name, email, password, companyName, region, servicePlan } = req.body;
     const normalizedPlan = servicePlan && String(servicePlan).trim() ? String(servicePlan).trim() : undefined;
+    const normalizedRegion = normalizeRegion(region);
+    const allowedRegions = new Set(['USA', 'UK', 'UAE', 'Singapore', 'India', 'Australia', 'Netherlands', 'SaudiArabia']);
+    const regionValue = normalizedRegion && allowedRegions.has(normalizedRegion) ? normalizedRegion : undefined;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required.' });
@@ -252,7 +255,7 @@ exports.createUserAsAdmin = async (req, res) => {
       email,
       password,
       companyName,
-      region,
+      region: regionValue,
       servicePlan: normalizedPlan,
       bypassPlan: true,
       status: 'active'

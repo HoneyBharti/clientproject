@@ -125,6 +125,24 @@ const resolveState = (submission) => {
   );
 };
 
+const normalizePlanName = (value) => {
+  if (!value) return undefined;
+  const trimmed = String(value).trim();
+  if (!trimmed) return undefined;
+  const key = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (key === 'allinone') return 'AllInOne';
+  if (key === 'startup') return 'Startup';
+  if (key === 'formation') return 'Formation';
+  if (key === 'compliance') return 'Compliance';
+  if (key === 'micro') return 'Micro';
+  if (key === 'vitals') return 'Vitals';
+  if (key === 'elite') return 'Elite';
+  if (key === 'starter') return 'Starter';
+  if (key === 'growth') return 'Growth';
+  if (key === 'scale') return 'Scale';
+  return trimmed;
+};
+
 exports.createFormationFromOnboarding = async (req, res) => {
   let submission;
   let formation;
@@ -171,7 +189,7 @@ exports.createFormationFromOnboarding = async (req, res) => {
       entityType: resolveEntityType(submission),
       country: resolveCountry(submission),
       state: resolveState(submission),
-      plan: submission.plan,
+      plan: normalizePlanName(submission.plan),
       status: 'pending',
       notes: submission.destination === 'ExistingCompliance' ? 'Created from onboarding (existing company).' : 'Created from onboarding.',
     });

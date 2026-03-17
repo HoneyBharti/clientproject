@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 const Document = require('../models/Document');
 const User = require('../models/User');
 const { getS3Object } = require('../utils/s3Client');
@@ -29,6 +30,30 @@ const toDocumentResponse = (doc, req) => {
 
 const validateObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 
+const allowedDocumentTypes = new Set([
+  'passport',
+  'proof_of_address',
+  'pan',
+  'aadhaar',
+  'photo',
+  'bank_statement',
+  'tax_id',
+  'prior_tax_return',
+  'certificate_of_incorporation',
+  'operating_agreement',
+  'bylaws',
+  'ein_confirmation',
+  'irs_documents',
+  'state_filings',
+  'bank_account_documents',
+  'loan_documents',
+  'contract',
+  'nda',
+  'ip_assignment',
+  'shareholder_agreement',
+  'other',
+]);
+
 const normalizeDocumentType = (value) => {
   if (!value) return undefined;
   const raw = String(value).trim();
@@ -38,7 +63,7 @@ const normalizeDocumentType = (value) => {
     .toLowerCase();
   if (snake === 'proofofaddress') return 'proof_of_address';
   if (snake === 'bank_statements') return 'bank_statement';
-  return snake;
+  return allowedDocumentTypes.has(snake) ? snake : 'other';
 };
 
 exports.getMyDocuments = async (req, res) => {

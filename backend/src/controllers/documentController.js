@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const mongoose = require('mongoose');
 const Document = require('../models/Document');
 const User = require('../models/User');
 const { getS3Object } = require('../utils/s3Client');

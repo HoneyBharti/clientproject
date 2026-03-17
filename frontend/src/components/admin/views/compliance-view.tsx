@@ -54,6 +54,7 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
   const [requestingEventId, setRequestingEventId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
+  const [eventStatusFilter, setEventStatusFilter] = useState("all");
 
   const [ruleForm, setRuleForm] = useState({
     name: "",
@@ -126,6 +127,11 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
     const inProgress = events.filter((event) => event.status === "in_progress" || event.status === "documents_requested").length;
     return { upcoming, dueThisWeek, overdue, inProgress };
   }, [events]);
+
+  const filteredEvents = useMemo(() => {
+    if (eventStatusFilter === "all") return events;
+    return events.filter((event) => event.status === eventStatusFilter);
+  }, [events, eventStatusFilter]);
 
   const resetRuleForm = () => {
     setEditingRuleId(null);
@@ -653,6 +659,17 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
           </CardHeader>
           <CardContent className="space-y-3">
             {eventMessage ? <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">{eventMessage}</div> : null}
+            <div className="flex flex-wrap gap-3">
+              <Select value={eventStatusFilter} onValueChange={setEventStatusFilter}>
+                <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Filter status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {Object.keys(statusStyles).map((status) => (
+                    <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -665,7 +682,7 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {events.map((event) => (
+                {filteredEvents.map((event) => (
                   <TableRow key={event._id}>
                     <TableCell>
                       <p className="font-medium">{event.company?.companyName || event.user?.companyName || "Unknown"}</p>

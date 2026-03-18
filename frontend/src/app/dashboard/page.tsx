@@ -4348,7 +4348,8 @@ export default function PortalPage({ onLogout }) {
     }, [financialSnapshot]);
 
     const dashboardMetrics = useMemo(() => {
-        const pendingDocs = (myDocuments || []).filter(doc => doc?.status === 'pending');
+        const rejectedDocs = (myDocuments || []).filter(doc => doc?.status === 'rejected');
+        const pendingReviewDocs = pendingDocs;
         const formationsNeedingDocs = (myFormations || []).filter(formation => formation?.status === 'documents_required');
         const formationsInProgress = (myFormations || []).filter(formation => ['pending', 'processing', 'filed'].includes(formation?.status));
         const activeOrders = (myOrders || []).filter(order => ['pending', 'confirmed', 'in_progress'].includes(order?.status));
@@ -4380,16 +4381,18 @@ export default function PortalPage({ onLogout }) {
                 complianceBg = 'bg-amber-50';
                 complianceTooltip = 'Compliance items are in progress.';
             }
-        } else if (pendingDocs.length > 0 || formationsNeedingDocs.length > 0) {
+        } else if (rejectedDocs.length > 0 || formationsNeedingDocs.length > 0) {
             complianceValue = 'Action Required';
             complianceColor = 'text-red-500';
             complianceBg = 'bg-red-50';
-            complianceTooltip = 'Pending documents or formation items require your attention.';
-        } else if (formationsInProgress.length > 0) {
+            complianceTooltip = 'Rejected documents or formation items require your attention.';
+        } else if (formationsInProgress.length > 0 || pendingReviewDocs.length > 0) {
             complianceValue = 'In Progress';
             complianceColor = 'text-amber-500';
             complianceBg = 'bg-amber-50';
-            complianceTooltip = 'Formation tasks are currently in progress.';
+            complianceTooltip = pendingReviewDocs.length > 0
+                ? 'Documents submitted and awaiting review.'
+                : 'Formation tasks are currently in progress.';
         }
 
         const now = new Date();
@@ -4455,10 +4458,11 @@ export default function PortalPage({ onLogout }) {
 
     const dashboardTasks = useMemo(() => {
         const tasks = [];
-        const pendingDocs = (myDocuments || []).filter(doc => doc?.status === 'pending');
+        const rejectedDocs = (myDocuments || []).filter(doc => doc?.status === 'rejected');
         const formationsNeedingDocs = (myFormations || []).filter(formation => formation?.status === 'documents_required');
         const formationsInProgress = (myFormations || []).filter(formation => ['pending', 'processing', 'filed'].includes(formation?.status));
         const activeOrders = (myOrders || []).filter(order => ['pending', 'confirmed', 'in_progress'].includes(order?.status));
+        const complianceDocRequests = (complianceEvents || []).filter(event => event?.status === 'documents_requested');
 
         const now = new Date();
         const overdueInvoices = (qbInvoices || []).filter(inv => inv?.Balance > 0 && inv?.DueDate && new Date(inv.DueDate) < now);
@@ -4476,15 +4480,27 @@ export default function PortalPage({ onLogout }) {
             });
         }
 
-        if (pendingDocs.length > 0) {
+        if (rejectedDocs.length > 0) {
             tasks.push({
-                id: 'task_docs_pending',
-                title: `Upload pending documents (${pendingDocs.length})`,
-                status: 'Pending',
+                id: 'task_docs_rejected',
+                title: `Re-upload rejected documents (${rejectedDocs.length})`,
+                status: 'Action Required',
                 due: 'ASAP',
                 icon: Upload,
                 priority: 'High',
                 actionPath: 'documents'
+            });
+        }
+
+        if (complianceDocRequests.length > 0) {
+            tasks.push({
+                id: 'task_compliance_docs',
+                title: `Upload requested compliance documents (${complianceDocRequests.length})`,
+                status: 'Action Required',
+                due: 'ASAP',
+                icon: FileText,
+                priority: 'High',
+                actionPath: 'compliance'
             });
         }
 
@@ -4560,7 +4576,7 @@ export default function PortalPage({ onLogout }) {
         }
 
         return tasks;
-    }, [myDocuments, myFormations, myOrders, qbInvoices, qbBills, isQuickBooksLinked]);
+    }, [myDocuments, myFormations, myOrders, complianceEvents, qbInvoices, qbBills, isQuickBooksLinked]);
 
 
 

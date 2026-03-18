@@ -4349,7 +4349,7 @@ export default function PortalPage({ onLogout }) {
 
     const dashboardMetrics = useMemo(() => {
         const rejectedDocs = (myDocuments || []).filter(doc => doc?.status === 'rejected');
-        const pendingReviewDocs = pendingDocs;
+        const pendingReviewDocs = (myDocuments || []).filter(doc => doc?.status === 'pending');
         const formationsNeedingDocs = (myFormations || []).filter(formation => formation?.status === 'documents_required');
         const formationsInProgress = (myFormations || []).filter(formation => ['pending', 'processing', 'filed'].includes(formation?.status));
         const activeOrders = (myOrders || []).filter(order => ['pending', 'confirmed', 'in_progress'].includes(order?.status));

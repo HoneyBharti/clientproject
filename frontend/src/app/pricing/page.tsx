@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PlanSelector from '@/components/payment/PlanSelector';
 import { NavHeader } from '@/components/layout/page-header';
 import { AppFooter } from '@/components/layout/page-footer';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function PricingPage() {
+function PricingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -167,6 +167,14 @@ export default function PricingPage() {
 
       <AppFooter />
     </div>
+  );
+}
+
+export default function PricingPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><span>Loading...</span></div>}>
+      <PricingPageContent />
+    </Suspense>
   );
 }
 

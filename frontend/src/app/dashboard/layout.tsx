@@ -72,15 +72,32 @@ export default function DashboardLayout({
   );
 
   const [onboardingStatus, setOnboardingStatus] = useState({
-    loading: false,
+    loading: true,
     hasSubmission: false,
     submission: null as any,
   });
 
-  const [recentOnboarding, setRecentOnboarding] = useState(false);
+  const [recentOnboarding, setRecentOnboarding] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const submittedAt = sessionStorage.getItem('onboarding_submitted_at');
+    if (!submittedAt) return false;
+    const submittedTime = new Date(submittedAt).getTime();
+    if (Number.isNaN(submittedTime)) {
+      sessionStorage.removeItem('onboarding_submitted_at');
+      sessionStorage.removeItem('onboarding_submission_id');
+      return false;
+    }
+    const maxAgeMs = 10 * 60 * 1000;
+    if (Date.now() - submittedTime <= maxAgeMs) {
+      return true;
+    }
+    sessionStorage.removeItem('onboarding_submitted_at');
+    sessionStorage.removeItem('onboarding_submission_id');
+    return false;
+  });
 
   const [paymentStatus, setPaymentStatus] = useState({
-    loading: false,
+    loading: true,
     latest: null as any,
   });
 

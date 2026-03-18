@@ -89,6 +89,7 @@ function OnboardingPageContent() {
   const [stepError, setStepError] = useState("");
   const [documentErrors, setDocumentErrors] = useState({});
   const [planLookupDone, setPlanLookupDone] = useState(false);
+  const [submissionComplete, setSubmissionComplete] = useState(false);
 
   const [formData, setFormData] = useState({
     stakeholders: [
@@ -186,6 +187,7 @@ function OnboardingPageContent() {
 
   useEffect(() => {
     if (loading) return;
+    if (submissionComplete) return;
     if (!user) {
       router.replace("/login");
       return;
@@ -247,7 +249,7 @@ function OnboardingPageContent() {
     if (!hasPlanParams || !isPaid) {
       resolvePlanFromPayments();
     }
-  }, [loading, user, planName, planState, planEntityType, planLookupDone, router]);
+  }, [loading, user, planName, planState, planEntityType, planLookupDone, submissionComplete, router]);
 
   const clearErrors = () => {
     if (stepError) setStepError("");
@@ -657,6 +659,7 @@ function OnboardingPageContent() {
       if (!response.ok || !data?.success) {
         throw new Error(data?.message || "Unable to submit onboarding.");
       }
+      setSubmissionComplete(true);
       if (typeof window !== "undefined") {
         const timestamp = new Date().toISOString();
         sessionStorage.setItem("onboarding_submitted_at", timestamp);

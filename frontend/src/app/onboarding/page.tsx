@@ -657,7 +657,14 @@ function OnboardingPageContent() {
       if (!response.ok || !data?.success) {
         throw new Error(data?.message || "Unable to submit onboarding.");
       }
-      router.push('/dashboard');
+      if (typeof window !== "undefined") {
+        const timestamp = new Date().toISOString();
+        sessionStorage.setItem("onboarding_submitted_at", timestamp);
+        if (data?.submissionId) {
+          sessionStorage.setItem("onboarding_submission_id", String(data.submissionId));
+        }
+      }
+      router.push("/dashboard");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Unable to submit onboarding.");
     } finally {

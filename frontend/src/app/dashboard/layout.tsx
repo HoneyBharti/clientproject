@@ -77,10 +77,31 @@ export default function DashboardLayout({
     submission: null as any,
   });
 
+  const [recentOnboarding, setRecentOnboarding] = useState(false);
+
   const [paymentStatus, setPaymentStatus] = useState({
     loading: false,
     latest: null as any,
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const submittedAt = sessionStorage.getItem('onboarding_submitted_at');
+    if (!submittedAt) return;
+    const submittedTime = new Date(submittedAt).getTime();
+    if (Number.isNaN(submittedTime)) {
+      sessionStorage.removeItem('onboarding_submitted_at');
+      sessionStorage.removeItem('onboarding_submission_id');
+      return;
+    }
+    const maxAgeMs = 10 * 60 * 1000;
+    if (Date.now() - submittedTime <= maxAgeMs) {
+      setRecentOnboarding(true);
+    } else {
+      sessionStorage.removeItem('onboarding_submitted_at');
+      sessionStorage.removeItem('onboarding_submission_id');
+    }
+  }, []);
 
   useEffect(() => {
     if (!isStandardUser) return;
@@ -96,6 +117,11 @@ export default function DashboardLayout({
           hasSubmission: Boolean(submission),
           submission,
         });
+        if (submission && typeof window !== 'undefined') {
+          sessionStorage.removeItem('onboarding_submitted_at');
+          sessionStorage.removeItem('onboarding_submission_id');
+          setRecentOnboarding(false);
+        }
       })
       .catch(() => {
         if (!isActive) return;
@@ -139,7 +165,13 @@ export default function DashboardLayout({
 
   const needsPlan = isStandardUser && !user?.bypassPlan && paymentLoaded && !hasPaid;
   const needsOnboarding =
-    isStandardUser && !user?.bypassPlan && paymentLoaded && onboardingLoaded && hasPaid && !onboardingStatus.hasSubmission;
+    isStandardUser &&
+    !user?.bypassPlan &&
+    paymentLoaded &&
+    onboardingLoaded &&
+    hasPaid &&
+    !onboardingStatus.hasSubmission &&
+    !recentOnboarding;
 
   const buildOnboardingUrl = () => {
     const latestPayment = paymentStatus.latest;

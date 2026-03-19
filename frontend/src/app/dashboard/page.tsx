@@ -752,11 +752,12 @@ const CompanySection = ({ userId, formations, documents, isLoading }) => {
             const rawStatus = progressObj?.[step.key]?.status;
             const isCompleted = rawStatus === 'completed' || (legacyCurrentKey ? keys.indexOf(step.key) < keys.indexOf(legacyCurrentKey) : false);
             const isCurrent = step.key === currentKey && !isCompleted;
+            const completedAt = progressObj?.[step.key]?.completedAt;
             return {
                 label: step.label,
                 status: isCompleted ? 'completed' : isCurrent ? 'current' : 'pending',
                 date: isCompleted
-                    ? formatTimelineDate(progressObj?.[step.key]?.completedAt || company?.updatedAt || company?.createdAt)
+                    ? (completedAt ? formatTimelineDate(completedAt) : 'Completed')
                     : isCurrent
                         ? 'In Progress'
                         : 'Pending',

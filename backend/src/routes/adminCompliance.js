@@ -7,6 +7,7 @@ const {
   getEvents,
   updateEventStatus,
   assignEvent,
+  deleteEvent,
   requestDocuments,
   getTasks,
   createTask,
@@ -31,6 +32,7 @@ router.get('/events', getEvents);
 router.patch('/events/:id/status', updateEventStatus);
 router.post('/events/:id/assign', assignEvent);
 router.post('/events/:id/request-documents', requestDocuments);
+router.delete('/events/:id', deleteEvent);
 
 // Tasks
 router.get('/tasks', getTasks);

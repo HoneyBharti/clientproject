@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { NavHeader } from "@/components/layout/page-header";
 import { AppFooter } from "@/components/layout/page-footer";
 import { API_BASE_URL } from "@/lib/api-base";
@@ -23,7 +23,7 @@ const loadBlog = async (slug: string) => {
 export default async function BlogDetailPage({ params }: { params: { slug: string } }) {
   const blog = await loadBlog(params.slug);
   if (!blog) {
-    notFound();
+    redirect(`/blog/${params.slug}?legacy=1`);
   }
   if (blog.status && blog.status !== "published") {
     notFound();

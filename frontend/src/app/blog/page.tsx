@@ -21,6 +21,7 @@ type PublicPost = {
     imageHint?: string;
     slug: string;
     source: 'static' | 'db';
+    status?: 'draft' | 'published' | 'archived';
 };
 
 const getSlugFromPath = (path: string) => {
@@ -45,16 +46,29 @@ const buildStaticPosts = (): PublicPost[] =>
         .filter((post) => Boolean(post.slug));
 
 const mergePosts = (staticPosts: PublicPost[], dbPosts: PublicPost[]) => {
+    const hiddenSlugs = new Set(
+        dbPosts
+            .filter(post => post.status && post.status !== 'published')
+            .map(post => post.slug)
+    );
     const merged = new Map<string, PublicPost>();
-    staticPosts.forEach((post) => merged.set(post.slug, post));
+    staticPosts.forEach((post) => {
+        if (!hiddenSlugs.has(post.slug)) {
+            merged.set(post.slug, post);
+        }
+    });
     dbPosts.forEach((post) => {
+        if (post.status && post.status !== 'published') {
+            return;
+        }
         const existing = merged.get(post.slug);
         if (existing) {
             merged.set(post.slug, {
                 ...existing,
                 ...post,
                 path: existing.path || post.path,
-                featured: existing.featured ?? post.featured,
+                featured: post.featured ?? existing.featured,
+                country: post.country || existing.country,
                 imageHint: existing.imageHint ?? post.imageHint,
                 source: post.source,
             });
@@ -81,7 +95,7 @@ function BlogContent() {
         let isMounted = true;
         const loadBlogs = async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/blogs?status=published&limit=200`, { cache: 'no-store' });
+                const response = await fetch(`${API_BASE_URL}/blogs?limit=200`, { cache: 'no-store' });
                 const data = await response.json().catch(() => null);
                 if (!response.ok || !data?.blogs) {
                     throw new Error(data?.message || 'Unable to load blogs.');
@@ -99,11 +113,12 @@ function BlogContent() {
                             category: blog.category || 'General',
                             country: blog.country || 'Global',
                             excerpt,
-                            featured: false,
+                            featured: Boolean(blog.featured),
                             image: blog.featuredImage || createPlaceholderImage(blog.title || 'Blog'),
                             imageHint: 'legal blog',
                             slug,
                             source: 'db',
+                            status: blog.status || 'draft',
                         };
                     })
                     .filter((post: PublicPost | null): post is PublicPost => Boolean(post));

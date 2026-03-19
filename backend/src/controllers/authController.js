@@ -52,6 +52,7 @@ const serializeUser = (user) => ({
   id: user._id,
   name: user.name,
   email: user.email,
+  phone: user.phone,
   role: user.role,
   companyName: user.companyName,
   region: user.region,
@@ -404,12 +405,14 @@ exports.googleCallback = async (req, res) => {
 
 exports.updateMe = async (req, res) => {
   try {
-    const { name, email } = req.body || {};
+    const { name, email, phone } = req.body || {};
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     const trimmedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const hasPhone = typeof phone === 'string';
+    const trimmedPhone = hasPhone ? phone.trim() : '';
 
-    if (!trimmedName && !trimmedEmail) {
-      return res.status(400).json({ message: 'Name or email is required.' });
+    if (!trimmedName && !trimmedEmail && !hasPhone) {
+      return res.status(400).json({ message: 'Name, email, or phone is required.' });
     }
 
     const user = await User.findById(req.user._id);
@@ -438,6 +441,10 @@ exports.updateMe = async (req, res) => {
         verificationToken = buildVerificationToken(user);
         verificationRequired = true;
       }
+    }
+
+    if (hasPhone) {
+      user.phone = trimmedPhone;
     }
 
     await user.save();

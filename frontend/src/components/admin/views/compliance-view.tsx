@@ -55,6 +55,7 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
   const [requestingEventId, setRequestingEventId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
   const [eventStatusFilter, setEventStatusFilter] = useState("all");
+  const [eventSort, setEventSort] = useState("due_asc");
 
   const [ruleForm, setRuleForm] = useState({
     name: "",
@@ -132,6 +133,35 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
     if (eventStatusFilter === "all") return events;
     return events.filter((event) => event.status === eventStatusFilter);
   }, [events, eventStatusFilter]);
+
+  const resolveClientName = (event: any) =>
+    event.company?.companyName || event.user?.companyName || event.user?.name || "Unknown";
+
+  const sortEventsList = (list: any[]) => {
+    const cloned = [...list];
+    switch (eventSort) {
+      case "client_asc":
+        return cloned.sort((a, b) => resolveClientName(a).localeCompare(resolveClientName(b)));
+      case "client_desc":
+        return cloned.sort((a, b) => resolveClientName(b).localeCompare(resolveClientName(a)));
+      case "due_desc":
+        return cloned.sort((a, b) => {
+          const aTime = new Date(a.dueDate || 0).getTime();
+          const bTime = new Date(b.dueDate || 0).getTime();
+          return bTime - aTime;
+        });
+      case "due_asc":
+      default:
+        return cloned.sort((a, b) => {
+          const aTime = new Date(a.dueDate || 0).getTime();
+          const bTime = new Date(b.dueDate || 0).getTime();
+          return aTime - bTime;
+        });
+    }
+  };
+
+  const sortedEvents = useMemo(() => sortEventsList(filteredEvents), [filteredEvents, eventSort]);
+  const sortedOverviewEvents = useMemo(() => sortEventsList(events), [events, eventSort]);
 
   const resetRuleForm = () => {
     setEditingRuleId(null);
@@ -302,6 +332,17 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
     }
   };
 
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!window.confirm("Delete this compliance filing? This cannot be undone.")) return;
+    try {
+      await fetchJson(`${COMPLIANCE_API_BASE}/events/${eventId}`, { method: "DELETE" });
+      await Promise.all([loadEvents(), loadTasks()]);
+      setEventMessage("Compliance filing deleted.");
+    } catch (error: any) {
+      setEventMessage(error?.message || "Unable to delete compliance filing.");
+    }
+  };
+
   const handleCreateTask = async () => {
     if (!taskForm.eventId || !taskForm.taskName.trim()) {
       setTaskMessage("Select an event and enter a task name.");
@@ -425,6 +466,17 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
             <CardDescription>Monitor due dates, assignments, and workflow status.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <Select value={eventSort} onValueChange={setEventSort}>
+                <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Sort by" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="due_asc">Due date (soonest)</SelectItem>
+                  <SelectItem value="due_desc">Due date (latest)</SelectItem>
+                  <SelectItem value="client_asc">Client (A-Z)</SelectItem>
+                  <SelectItem value="client_desc">Client (Z-A)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -437,7 +489,7 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {events.map((event) => (
+                {sortedOverviewEvents.map((event) => (
                   <TableRow key={event._id}>
                     <TableCell>
                       <p className="font-medium">{event.company?.companyName || event.user?.companyName || "Unknown"}</p>
@@ -457,6 +509,9 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" onClick={() => openRequestDialog(event._id)}>
                           Request Docs
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleDeleteEvent(event._id)}>
+                          Delete
                         </Button>
                       </div>
                     </TableCell>
@@ -669,6 +724,15 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={eventSort} onValueChange={setEventSort}>
+                <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Sort by" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="due_asc">Due date (soonest)</SelectItem>
+                  <SelectItem value="due_desc">Due date (latest)</SelectItem>
+                  <SelectItem value="client_asc">Client (A-Z)</SelectItem>
+                  <SelectItem value="client_desc">Client (Z-A)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Table>
               <TableHeader>
@@ -682,7 +746,7 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEvents.map((event) => (
+                {sortedEvents.map((event) => (
                   <TableRow key={event._id}>
                     <TableCell>
                       <p className="font-medium">{event.company?.companyName || event.user?.companyName || "Unknown"}</p>
@@ -717,7 +781,10 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant="outline" onClick={() => openRequestDialog(event._id)}>Request Docs</Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => openRequestDialog(event._id)}>Request Docs</Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleDeleteEvent(event._id)}>Delete</Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

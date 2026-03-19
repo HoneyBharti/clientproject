@@ -47,9 +47,26 @@ exports.getBlogBySlug = async (req, res) => {
 
 exports.createBlog = async (req, res) => {
   try {
-    const blog = await Blog.create({
+    const rawAuthorName =
+      typeof req.body.authorName === 'string'
+        ? req.body.authorName
+        : typeof req.body.author === 'string'
+        ? req.body.author
+        : '';
+    const authorName = String(rawAuthorName || '').trim() || undefined;
+
+    const payload = {
       ...req.body,
-      author: req.user._id
+      author: req.user._id,
+      authorName,
+    };
+
+    if (payload.status === 'published' && !payload.publishedAt) {
+      payload.publishedAt = new Date();
+    }
+
+    const blog = await Blog.create({
+      ...payload,
     });
 
     res.status(201).json({ success: true, blog });
@@ -62,7 +79,14 @@ exports.updateBlog = async (req, res) => {
   try {
     const updateData = { ...req.body };
     if (updateData.author && !mongoose.Types.ObjectId.isValid(updateData.author)) {
+      updateData.authorName = String(updateData.author || '').trim() || updateData.authorName;
       delete updateData.author;
+    }
+    if (updateData.authorName !== undefined) {
+      updateData.authorName = String(updateData.authorName || '').trim() || undefined;
+    }
+    if (updateData.status === 'published' && !updateData.publishedAt) {
+      updateData.publishedAt = new Date();
     }
 
     const blog = await Blog.findByIdAndUpdate(

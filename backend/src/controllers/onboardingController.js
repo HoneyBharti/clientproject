@@ -129,6 +129,20 @@ const resolveCountry = (submission) => {
 
 const resolveState = (submission) => {
   const form = submission.formData || {};
+  const resolvedRegion = normalizeRegion(
+    submission.planCountry ||
+      submission.destination ||
+      form.existingCompany?.country
+  );
+  if (resolvedRegion === 'UAE') {
+    return (
+      form.freeZone ||
+      submission.planState ||
+      form.state ||
+      form.existingCompany?.country ||
+      'Unknown'
+    );
+  }
   return (
     submission.planState ||
     form.state ||

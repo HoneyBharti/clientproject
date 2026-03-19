@@ -4,10 +4,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "@/lib/api-base";
 import type { AdminViewContext } from "./types";
 
 export function PaymentsView({ ctx }: { ctx: AdminViewContext }) {
-  const { paymentStatus, setPaymentStatus, filteredPayments, paymentStatusClass, userRecords, refundPayment, addActivity, d } = ctx;
+  const { paymentStatus, setPaymentStatus, filteredPayments, paymentStatusClass, userRecords, addActivity, d } = ctx;
+
+  const handleViewInvoice = async (payment: any) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/payment/${payment.id}/receipt`, {
+        credentials: 'include',
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.receiptUrl) {
+        addActivity(`Invoice not available for ${payment.id}`);
+        return;
+      }
+      window.open(data.receiptUrl, "_blank", "noopener,noreferrer");
+      addActivity(`Viewed invoice for ${payment.id}`);
+    } catch (error) {
+      addActivity(`Invoice lookup failed for ${payment.id}`);
+    }
+  };
 
   return (
     <Card>
@@ -65,12 +83,9 @@ export function PaymentsView({ ctx }: { ctx: AdminViewContext }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => refundPayment(payment.id)}
+                      onClick={() => handleViewInvoice(payment)}
                       disabled={payment.status !== "succeeded"}
                     >
-                      Refund
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => addActivity(`Viewed invoice for ${payment.id}`)}>
                       View Invoice
                     </Button>
                   </div>

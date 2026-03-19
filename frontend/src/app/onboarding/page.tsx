@@ -251,6 +251,22 @@ function OnboardingPageContent() {
     }
   }, [loading, user, planName, planState, planEntityType, planLookupDone, submissionComplete, router]);
 
+  useEffect(() => {
+    const defaultFiscalYear =
+      destination === "India" || formData.existingCompany.country === "India"
+        ? "March 31"
+        : "December 31";
+    if (!formData.bookkeeping.fiscalYearEnd) {
+      setFormData((prev) => ({
+        ...prev,
+        bookkeeping: {
+          ...prev.bookkeeping,
+          fiscalYearEnd: defaultFiscalYear,
+        },
+      }));
+    }
+  }, [destination, formData.existingCompany.country, formData.bookkeeping.fiscalYearEnd]);
+
   const clearErrors = () => {
     if (stepError) setStepError("");
     if (submitError) setSubmitError("");
@@ -419,6 +435,45 @@ function OnboardingPageContent() {
     }));
   };
 
+  const removeStakeholderDocument = (stakeholderIndex, documentType) => {
+    setDocumentErrors((prev) => {
+      const next = { ...prev };
+      delete next[`${stakeholderIndex}_${documentType}`];
+      return next;
+    });
+    setFormData((prev) => {
+      const updatedStakeholders = [...prev.stakeholders];
+      if (updatedStakeholders[stakeholderIndex]) {
+        updatedStakeholders[stakeholderIndex] = {
+          ...updatedStakeholders[stakeholderIndex],
+          documents: {
+            ...updatedStakeholders[stakeholderIndex].documents,
+            [documentType]: null,
+          },
+        };
+      }
+      return { ...prev, stakeholders: updatedStakeholders };
+    });
+  };
+
+  const removeBookkeepingDocument = (documentType) => {
+    setDocumentErrors((prev) => {
+      const next = { ...prev };
+      delete next[`bookkeeping_${documentType}`];
+      return next;
+    });
+    setFormData((prev) => ({
+      ...prev,
+      bookkeeping: {
+        ...prev.bookkeeping,
+        documents: {
+          ...prev.bookkeeping.documents,
+          [documentType]: null,
+        },
+      },
+    }));
+  };
+
   const removeStakeholder = (id) => {
     clearErrors();
     setFormData((prev) => ({
@@ -435,7 +490,11 @@ function OnboardingPageContent() {
       return ["Company Info", "Required Services", "Accounting Setup", "Stakeholders", "Review & Submit"];
     }
     const steps = ["Company Details", "Stakeholders & KYC", "Compliance & Add-ons"];
-    if (formData.addOns.annualCompliance) steps.push("Bookkeeping Setup");
+    if (destination === "UAE") {
+      steps.push("Banking Setup");
+    } else if (formData.addOns.annualCompliance) {
+      steps.push("Bookkeeping Setup");
+    }
     steps.push("Review & Submit");
     return steps;
   };
@@ -446,12 +505,29 @@ function OnboardingPageContent() {
     return false;
   };
 
+  const isValidEmail = (value) => {
+    if (isBlank(value)) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim());
+  };
+
+  const isValidPhone = (value) => {
+    if (isBlank(value)) return false;
+    const digits = String(value).replace(/\D/g, "");
+    return digits.length >= 7 && digits.length <= 15;
+  };
+
   const validateStakeholders = (missing) => {
     formData.stakeholders.forEach((stakeholder, index) => {
       const labelPrefix = `Stakeholder ${index + 1}`;
       if (isBlank(stakeholder.name)) missing.push(`${labelPrefix} name`);
       if (isBlank(stakeholder.email)) missing.push(`${labelPrefix} email`);
+      if (!isBlank(stakeholder.email) && !isValidEmail(stakeholder.email)) {
+        missing.push(`${labelPrefix} email format`);
+      }
       if (isBlank(stakeholder.phone)) missing.push(`${labelPrefix} phone`);
+      if (!isBlank(stakeholder.phone) && !isValidPhone(stakeholder.phone)) {
+        missing.push(`${labelPrefix} phone number`);
+      }
       if (isBlank(stakeholder.dob)) missing.push(`${labelPrefix} date of birth`);
       if (isBlank(stakeholder.nationality)) missing.push(`${labelPrefix} nationality`);
       if (isBlank(stakeholder.address)) missing.push(`${labelPrefix} address`);
@@ -487,7 +563,13 @@ function OnboardingPageContent() {
     if (formData.pocDifferent) {
       if (isBlank(formData.pocName)) missing.push("POC name");
       if (isBlank(formData.pocEmail)) missing.push("POC email");
+      if (!isBlank(formData.pocEmail) && !isValidEmail(formData.pocEmail)) {
+        missing.push("POC email format");
+      }
       if (isBlank(formData.pocPhone)) missing.push("POC phone");
+      if (!isBlank(formData.pocPhone) && !isValidPhone(formData.pocPhone)) {
+        missing.push("POC phone number");
+      }
     }
   };
 
@@ -557,8 +639,33 @@ function OnboardingPageContent() {
       }
     }
 
+    if (stepName === "Banking Setup") {
+      if (!formData.bookkeeping.documents.bankStatements) {
+        missing.push("Last 3 months bank statements");
+      }
+    }
+
     if (stepName === "Stakeholders & KYC" || stepName === "Stakeholders") {
+      if (destination === "USA" && entityType === "C-Corp" && formData.stakeholders.length < 2) {
+        missing.push("Second corporate officer (add another stakeholder)");
+      }
       validateStakeholders(missing);
+      if (destination === "USA") {
+        const ownershipMissing = formData.stakeholders.some((stakeholder) => isBlank(stakeholder.ownership));
+        const ownershipValues = formData.stakeholders.map((stakeholder) => Number(stakeholder.ownership));
+        const ownershipInvalid = ownershipValues.some((value) => Number.isNaN(value));
+
+        if (!ownershipMissing && !ownershipInvalid) {
+          const totalOwnership = ownershipValues.reduce((sum, value) => sum + value, 0);
+          if (totalOwnership < 100) {
+            missing.push("Total ownership must equal 100% (add another stakeholder)");
+          } else if (totalOwnership > 100) {
+            missing.push("Total ownership cannot exceed 100%");
+          }
+        } else if (!ownershipMissing && ownershipInvalid) {
+          missing.push("Ownership percentages must be valid numbers");
+        }
+      }
     }
 
     if (stepName === "Review & Submit") {
@@ -1340,8 +1447,8 @@ function OnboardingPageContent() {
                 <input type="date" value={stakeholder.dob} onChange={(e) => handleStakeholderChange(index, "dob", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 text-sm focus:bg-white" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Nationality *</label>
-                <input type="text" placeholder="e.g. British" value={stakeholder.nationality} onChange={(e) => handleStakeholderChange(index, "nationality", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 text-sm focus:bg-white" />
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Country *</label>
+                <input type="text" placeholder="e.g. United States" value={stakeholder.nationality} onChange={(e) => handleStakeholderChange(index, "nationality", e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 bg-gray-50 text-sm focus:bg-white" />
               </div>
 
               {destination === "India" || formData.existingCompany.country === "India" ? (
@@ -1458,6 +1565,15 @@ function OnboardingPageContent() {
                       {documentErrors[`${index}_pan`] && (
                         <p className="text-xs text-red-500 mt-1">{documentErrors[`${index}_pan`]}</p>
                       )}
+                      {stakeholder.documents.pan && (
+                        <button
+                          type="button"
+                          onClick={() => removeStakeholderDocument(index, 'pan')}
+                          className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
                     <div className="flex flex-col items-center">
                       <input
@@ -1478,6 +1594,15 @@ function OnboardingPageContent() {
                       {documentErrors[`${index}_aadhaar`] && (
                         <p className="text-xs text-red-500 mt-1">{documentErrors[`${index}_aadhaar`]}</p>
                       )}
+                      {stakeholder.documents.aadhaar && (
+                        <button
+                          type="button"
+                          onClick={() => removeStakeholderDocument(index, 'aadhaar')}
+                          className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
                     <div className="flex flex-col items-center">
                       <input
@@ -1497,6 +1622,15 @@ function OnboardingPageContent() {
                       </label>
                       {documentErrors[`${index}_proofOfAddress`] && (
                         <p className="text-xs text-red-500 mt-1">{documentErrors[`${index}_proofOfAddress`]}</p>
+                      )}
+                      {stakeholder.documents.proofOfAddress && (
+                        <button
+                          type="button"
+                          onClick={() => removeStakeholderDocument(index, 'proofOfAddress')}
+                          className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
                       )}
                     </div>
                   </>
@@ -1521,6 +1655,15 @@ function OnboardingPageContent() {
                       {documentErrors[`${index}_passport`] && (
                         <p className="text-xs text-red-500 mt-1">{documentErrors[`${index}_passport`]}</p>
                       )}
+                      {stakeholder.documents.passport && (
+                        <button
+                          type="button"
+                          onClick={() => removeStakeholderDocument(index, 'passport')}
+                          className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
                     <div className="flex flex-col items-center">
                       <input
@@ -1540,6 +1683,15 @@ function OnboardingPageContent() {
                       </label>
                       {documentErrors[`${index}_proofOfAddress`] && (
                         <p className="text-xs text-red-500 mt-1">{documentErrors[`${index}_proofOfAddress`]}</p>
+                      )}
+                      {stakeholder.documents.proofOfAddress && (
+                        <button
+                          type="button"
+                          onClick={() => removeStakeholderDocument(index, 'proofOfAddress')}
+                          className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
                       )}
                     </div>
                     {destination === "UAE" && (
@@ -1561,6 +1713,15 @@ function OnboardingPageContent() {
                         </label>
                         {documentErrors[`${index}_photo`] && (
                           <p className="text-xs text-red-500 mt-1">{documentErrors[`${index}_photo`]}</p>
+                        )}
+                        {stakeholder.documents.photo && (
+                          <button
+                            type="button"
+                            onClick={() => removeStakeholderDocument(index, 'photo')}
+                            className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                          >
+                            Remove
+                          </button>
                         )}
                       </div>
                     )}
@@ -1676,6 +1837,56 @@ function OnboardingPageContent() {
     </div>
   );
 
+  const renderBankingSetup = () => (
+    <div className="space-y-6">
+      <div className="flex items-center space-x-3 mb-6">
+        <div className="bg-blue-100 p-2 rounded-lg text-blue-600"><CreditCard size={24} /></div>
+        <div>
+          <h3 className="text-xl font-bold text-gray-900">Banking Setup</h3>
+          <p className="text-sm text-gray-500">Upload required banking documents for UAE formation and compliance.</p>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <span className="text-sm text-gray-700 font-medium mb-2 sm:mb-0">Last 3 Months Bank Statements *</span>
+          <div className="flex flex-col items-end">
+            <input
+              type="file"
+              id="uae-bankStatements"
+              accept=".pdf,.csv,.xlsx,.xls"
+              onChange={(e) => handleBookkeepingDocumentUpload('bankStatements', e.target.files[0])}
+              className="hidden"
+            />
+            <label
+              htmlFor="uae-bankStatements"
+              className={`bg-white border text-gray-700 px-3 py-1.5 rounded shadow-sm text-xs font-medium hover:bg-gray-50 cursor-pointer ${
+                formData.bookkeeping.documents.bankStatements ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300'
+              }`}
+            >
+              {formData.bookkeeping.documents.bankStatements ? '✓ Uploaded' : 'Upload PDF / CSV'}
+            </label>
+            {documentErrors['bookkeeping_bankStatements'] && (
+              <p className="text-xs text-red-500 mt-1">{documentErrors['bookkeeping_bankStatements']}</p>
+            )}
+            {formData.bookkeeping.documents.bankStatements && (
+              <button
+                type="button"
+                onClick={() => removeBookkeepingDocument('bankStatements')}
+                className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          Bank statements are mandatory for UAE banking assistance and compliance verification.
+        </p>
+      </div>
+    </div>
+  );
+
   const renderBookkeeping = () => (
     <div className="space-y-6">
       <div className="flex items-center space-x-3 mb-6">
@@ -1771,6 +1982,15 @@ function OnboardingPageContent() {
                 {documentErrors['bookkeeping_bankStatements'] && (
                   <p className="text-xs text-red-500 mt-1">{documentErrors['bookkeeping_bankStatements']}</p>
                 )}
+                {formData.bookkeeping.documents.bankStatements && (
+                  <button
+                    type="button"
+                    onClick={() => removeBookkeepingDocument('bankStatements')}
+                    className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1798,6 +2018,15 @@ function OnboardingPageContent() {
                 {documentErrors['bookkeeping_taxId'] && (
                   <p className="text-xs text-red-500 mt-1">{documentErrors['bookkeeping_taxId']}</p>
                 )}
+                {formData.bookkeeping.documents.taxId && (
+                  <button
+                    type="button"
+                    onClick={() => removeBookkeepingDocument('taxId')}
+                    className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1823,11 +2052,20 @@ function OnboardingPageContent() {
                   >
                     {formData.bookkeeping.documents.priorTaxReturn ? '✓ Uploaded' : 'Upload Return'}
                   </label>
-                  {documentErrors['bookkeeping_priorTaxReturn'] && (
-                    <p className="text-xs text-red-500 mt-1">{documentErrors['bookkeeping_priorTaxReturn']}</p>
-                  )}
-                </div>
+                {documentErrors['bookkeeping_priorTaxReturn'] && (
+                  <p className="text-xs text-red-500 mt-1">{documentErrors['bookkeeping_priorTaxReturn']}</p>
+                )}
+                {formData.bookkeeping.documents.priorTaxReturn && (
+                  <button
+                    type="button"
+                    onClick={() => removeBookkeepingDocument('priorTaxReturn')}
+                    className="mt-1 text-[10px] font-semibold text-red-600 hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
+            </div>
             )}
           </div>
           <p className="text-xs text-red-600 mt-3 font-medium">* All documents are mandatory for compliance setup</p>
@@ -1881,7 +2119,7 @@ function OnboardingPageContent() {
             <div key={s.id} className="bg-white p-3 rounded-lg border border-gray-100 flex justify-between items-center text-sm shadow-sm">
               <div>
                 <span className="font-bold text-gray-800">{s.name || `Stakeholder ${i + 1}`}</span>
-                <span className="text-xs text-gray-500 block">{s.email || "No email"} | {s.nationality || "Nationality unspecified"}</span>
+                <span className="text-xs text-gray-500 block">{s.email || "No email"} | {s.nationality || "Country unspecified"}</span>
               </div>
               <div className="text-right">
                 <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-1 rounded">{s.ownership ? `${s.ownership}%` : "0%"} Ownership</span>
@@ -1936,11 +2174,20 @@ function OnboardingPageContent() {
             </>
           )}
 
-          {(formData.addOns.annualCompliance || destination === "ExistingCompliance") && (
+          {(formData.addOns.annualCompliance || destination === "ExistingCompliance") && destination !== "UAE" && (
             <div className="pl-4 py-2 text-xs text-gray-500 border-l-2 border-green-200 ml-2 space-y-1 mt-2">
               <p>• Software: <span className="font-medium text-gray-700">{formData.bookkeeping.software || "Not specified"}</span></p>
               <p>• Vol/Month: <span className="font-medium text-gray-700">{formData.bookkeeping.monthlyTransactions || "Not specified"} txns</span></p>
-              <p>• Fiscal Year: <span className="font-medium text-gray-700">{formData.bookkeeping.fiscalYearEnd || "Standard"}</span></p>
+              <p>• Avg Txn Value: <span className="font-medium text-gray-700">{formData.bookkeeping.avgTransactionValue || "Not specified"}</span></p>
+              <p>• Fiscal Year: <span className="font-medium text-gray-700">{formData.bookkeeping.fiscalYearEnd || "Not specified"}</span></p>
+            </div>
+          )}
+
+          {destination === "UAE" && (
+            <div className="pl-4 py-2 text-xs text-gray-500 border-l-2 border-green-200 ml-2 space-y-1 mt-2">
+              <p>
+                • Bank Statements: <span className="font-medium text-gray-700">{formData.bookkeeping.documents.bankStatements ? "Uploaded" : "Missing"}</span>
+              </p>
             </div>
           )}
         </div>
@@ -1983,6 +2230,8 @@ function OnboardingPageContent() {
         return renderAddOns();
       case "Bookkeeping Setup":
         return renderBookkeeping();
+      case "Banking Setup":
+        return renderBankingSetup();
       case "Company Info":
         return renderExistingCompanyDetails();
       case "Required Services":

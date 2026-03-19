@@ -4,7 +4,8 @@ const {
   createCheckoutSession, 
   handleWebhook, 
   getPayments, 
-  getAllPayments 
+  getAllPayments,
+  getPaymentReceipt
 } = require('../controllers/paymentController');
 const {
   createSubscription,
@@ -20,6 +21,7 @@ router.post('/create-checkout', protect, createCheckoutSession);
 router.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 router.get('/my-payments', protect, getPayments);
 router.get('/all', protect, authorize('admin'), getAllPayments);
+router.get('/:paymentId/receipt', protect, authorize('admin'), getPaymentReceipt);
 
 router.post('/subscription/create', protect, createSubscription);
 router.post('/subscription/cancel', protect, cancelSubscription);

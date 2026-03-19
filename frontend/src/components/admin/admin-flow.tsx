@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   AlertTriangle,
   BarChart3,
@@ -29,6 +30,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Users,
+  UserCircle,
   X,
 } from "lucide-react";
 
@@ -45,6 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { ActivityView } from "@/components/admin/views/activity-view";
+import { AdminProfileView } from "@/components/admin/views/admin-profile-view";
 import { BlogsView } from "@/components/admin/views/blogs-view";
 import { ClientDocumentsModal } from "@/components/admin/views/client-documents-modal";
 import { ComplianceView } from "@/components/admin/views/compliance-view";
@@ -67,6 +70,7 @@ import { allPosts } from "@/lib/blog-posts";
 
 type AdminView =
   | "overview"
+  | "profile"
   | "users"
   | "orders"
   | "onboarding"
@@ -200,8 +204,10 @@ type BlogRecord = {
   fullContent: string;
   author: string;
   category: string;
+  country?: string;
   tags: string[];
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
+  featured?: boolean;
   createdAt: string;
   source?: "static" | "db";
 };
@@ -301,6 +307,7 @@ type LiveAdminDocument = {
 
 const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
   overview: { title: "Dashboard", subtitle: "Business overview and quick metrics" },
+  profile: { title: "Admin Profile", subtitle: "Manage your profile details and password" },
   users: { title: "Users", subtitle: "Manage users, profiles, orders and payments" },
   orders: { title: "Orders", subtitle: "Track service requests and execution status" },
   onboarding: { title: "Onboarding", subtitle: "Review onboarding submissions before formation" },
@@ -309,7 +316,7 @@ const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
   payments: { title: "Payments", subtitle: "Transactions, invoices, refunds and failures" },
   reports: { title: "Reports", subtitle: "Revenue, growth and service analytics" },
   activity: { title: "Activity Logs", subtitle: "Audit trail of admin actions" },
-  blogs: { title: "Blog Posts", subtitle: "Legacy route: blog content queue" },
+  blogs: { title: "Blog Posts", subtitle: "Create, edit, publish, archive, and delete blog content" },
   services: { title: "Service Pages", subtitle: "Legacy route: service content queue" },
   quickbooks: { title: "QuickBooks Integration", subtitle: "Monitor accounting system connections" },
   compliance: { title: "Compliance Tracking", subtitle: "Monitor deadlines and risk levels" },
@@ -319,6 +326,7 @@ const viewMeta: Record<AdminView, { title: string; subtitle: string }> = {
 
 const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { key: "overview", label: "Dashboard", icon: LayoutDashboard },
+  { key: "profile", label: "Profile", icon: UserCircle },
   { key: "users", label: "Users", icon: Users },
   { key: "zoho-leads", label: "Zoho Leads", icon: TrendingUp },
   { key: "orders", label: "Orders", icon: ClipboardList },
@@ -337,6 +345,7 @@ const navItems: Array<{ key: AdminView; label: string; icon: React.ComponentType
 
 const viewHref: Record<AdminView, string> = {
   overview: "/admin",
+  profile: "/admin/profile",
   users: "/admin/users",
   "zoho-leads": "/admin/zoho-leads",
   orders: "/admin/orders",
@@ -666,13 +675,23 @@ function StatCard({ label, value, icon: Icon, tone, change, changeType }: {
 
 export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView }) {
   const router = useRouter();
-  const { checkAuth } = useAuth();
+  const { checkAuth, user } = useAuth();
   const adminData = useAdminData();
   const [userRecords, setUserRecords] = useState<AdminUser[]>([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const [showLoader, setShowLoader] = useState(false);
+
+  const adminName = user?.name?.trim() || "Admin User";
+  const adminEmail = user?.email?.trim() || "admin@yourlegal.com";
+  const adminRole = user?.role ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}` : "Admin";
+  const adminInitials = adminName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "AD";
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | ClientStatus>("all");
@@ -1244,9 +1263,10 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
     const staticBlogs = mapStaticPostsToBlogs();
     const mapped = adminData.blogs.map((blog: any) => {
       const authorValue =
-        typeof blog.author === "string"
+        blog.authorName ||
+        (typeof blog.author === "string"
           ? blog.author
-          : blog.author?.name || blog.author?.email || blog.author?._id || "Admin";
+          : blog.author?.name || blog.author?.email || blog.author?._id || "Admin");
 
       return {
         id: String(blog._id || blog.id),
@@ -1257,8 +1277,15 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
         fullContent: blog.content || blog.fullContent || "",
         author: authorValue,
         category: blog.category || "General",
+        country: blog.country || "Global",
         tags: Array.isArray(blog.tags) ? blog.tags : [],
-        status: blog.status === "published" ? "published" : "draft",
+        status:
+          blog.status === "published"
+            ? "published"
+            : blog.status === "archived"
+            ? "archived"
+            : "draft",
+        featured: Boolean(blog.featured),
         createdAt: blog.createdAt || blog.updatedAt || new Date().toISOString(),
         source: "db",
       };
@@ -2577,14 +2604,16 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             <div className="fixed inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
             <aside className="fixed left-0 top-0 h-full w-64 bg-white">
               <div className="border-b p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="rounded bg-blue-600 p-2 text-white">
-                      <Building2 className="h-5 w-5" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-sm font-semibold text-white">
+                      {adminInitials}
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">YourLegal</p>
-                      <p className="text-xs text-gray-500">Admin Panel</p>
+                    <div className="min-w-0">
+                      <div>
+                        <Image src="/logo.png" alt="YourLegal" width={110} height={24} className="h-5 w-auto object-contain" />
+                      </div>
+                      <p className="mt-1 truncate text-sm font-semibold text-gray-900">{adminName}</p>
                     </div>
                   </div>
                   <button onClick={() => setMobileMenuOpen(false)}>
@@ -2624,13 +2653,15 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
         {/* Desktop sidebar */}
         <aside className="hidden w-64 flex-col border-r bg-white lg:flex">
           <div className="border-b p-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded bg-blue-600 p-2 text-white">
-                <Building2 className="h-5 w-5" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-sm font-semibold text-white">
+                {adminInitials}
               </div>
-              <div>
-                <p className="font-semibold text-gray-900">YourLegal</p>
-                <p className="text-xs text-gray-500">Admin Panel</p>
+              <div className="min-w-0">
+                <div>
+                  <Image src="/logo.png" alt="YourLegal" width={110} height={24} className="h-5 w-auto object-contain" />
+                </div>
+                <p className="mt-1 truncate text-sm font-semibold text-gray-900">{adminName}</p>
               </div>
             </div>
           </div>
@@ -2723,6 +2754,7 @@ export function AdminFlow({ activeView = "overview" }: { activeView?: AdminView 
             </div>
 
             {activeView === "overview" ? <OverviewView ctx={viewCtx} /> : null}
+            {activeView === "profile" ? <AdminProfileView /> : null}
             {activeView === "users" ? <UsersView ctx={viewCtx} /> : null}
             {activeView === "orders" ? <OrdersView ctx={viewCtx} /> : null}
             {activeView === "onboarding" ? <OnboardingView ctx={viewCtx} /> : null}

@@ -66,6 +66,77 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
   const resolveCurrentStep = (progress: any, order: string[]) =>
     order.find((key) => progress?.[key]?.status !== "completed") || order[order.length - 1];
 
+  const isStepCompleted = (progress: any, step: string) =>
+    progress?.[step]?.status === "completed";
+
+  const renderProgressManager = (
+    formationId: string,
+    section: string,
+    stepOrder: string[],
+    stepLabels: Record<string, string>,
+    progress: any
+  ) => {
+    const currentStep = resolveCurrentStep(progress, stepOrder);
+    const allDone = stepOrder.every((step) => isStepCompleted(progress, step));
+
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          {stepOrder.map((step) => {
+            const completed = isStepCompleted(progress, step);
+            const isCurrent = step === currentStep && !completed;
+            const label = stepLabels[step] || step;
+            const badgeClass = completed
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : isCurrent
+                ? "border-amber-200 bg-amber-50 text-amber-700"
+                : "border-slate-200 bg-slate-50 text-slate-600";
+            const dotClass = completed
+              ? "bg-emerald-500"
+              : isCurrent
+                ? "bg-amber-500"
+                : "bg-slate-300";
+
+            return (
+              <span key={step} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold ${badgeClass}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+                {label}
+              </span>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="h-8 min-w-[190px] rounded-md border border-slate-200 bg-white px-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) {
+                const [action, step] = e.target.value.split(":");
+                const status = action === "complete" ? "completed" : "pending";
+                handleProgressUpdate(formationId, section, step, status);
+                e.currentTarget.value = "";
+              }
+            }}
+          >
+            <option value="" disabled>Update step</option>
+            {stepOrder.map((step) => {
+              const completed = isStepCompleted(progress, step);
+              const label = stepLabels[step] || step;
+              return (
+                <option key={step} value={`${completed ? "unmark" : "complete"}:${step}`}>
+                  {completed ? "Unmark" : "Complete"} {label}
+                </option>
+              );
+            })}
+          </select>
+          <span className="text-[11px] text-muted-foreground">
+            {allDone ? "All steps completed." : `Next: ${stepLabels[currentStep] || currentStep}`}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const handleProgressUpdate = async (formationId: string, section: string, step: string, status: string = "completed") => {
     if (!updateFormationProgress) return;
     await updateFormationProgress(formationId, section, step, status);
@@ -191,9 +262,6 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
               const formationProgress = formation.formationProgress || {};
               const einProgress = formation.einProgress || {};
               const initialCompliance = formation.initialCompliance || {};
-              const currentFormation = resolveCurrentStep(formationProgress, formationStepOrder);
-              const currentEin = resolveCurrentStep(einProgress, einStepOrder);
-              const currentCompliance = resolveCurrentStep(initialCompliance, complianceStepOrder);
 
               return (
                 <TableRow key={formation.id}>
@@ -215,79 +283,31 @@ export function FormationsView({ ctx }: { ctx: AdminViewContext }) {
                   </TableCell>
                   <TableCell>{formation.assignedAgent}</TableCell>
                   <TableCell>
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-500">Current: {formationStepLabels[currentFormation]}</p>
-                      <select
-                        className="h-8 w-[200px] rounded-md border border-gray-200 bg-white px-2 text-xs"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            const [action, step] = e.target.value.split(':');
-                            const status = action === 'complete' ? 'completed' : 'pending';
-                            handleProgressUpdate(formation.id, "formationProgress", step, status);
-                            e.currentTarget.value = "";
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Update progress</option>
-                        {formationStepOrder.map((step) => (
-                          <option key={`complete:${step}`} value={`complete:${step}`}>✓ Complete {formationStepLabels[step]}</option>
-                        ))}
-                        {formationStepOrder.map((step) => (
-                          <option key={`unmark:${step}`} value={`unmark:${step}`}>✗ Unmark {formationStepLabels[step]}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {renderProgressManager(
+                      formation.id,
+                      "formationProgress",
+                      formationStepOrder,
+                      formationStepLabels,
+                      formationProgress
+                    )}
                   </TableCell>
                   <TableCell>
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-500">Current: {einStepLabels[currentEin]}</p>
-                      <select
-                        className="h-8 w-[200px] rounded-md border border-gray-200 bg-white px-2 text-xs"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            const [action, step] = e.target.value.split(':');
-                            const status = action === 'complete' ? 'completed' : 'pending';
-                            handleProgressUpdate(formation.id, "einProgress", step, status);
-                            e.currentTarget.value = "";
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Update progress</option>
-                        {einStepOrder.map((step) => (
-                          <option key={`complete:${step}`} value={`complete:${step}`}>✓ Complete {einStepLabels[step]}</option>
-                        ))}
-                        {einStepOrder.map((step) => (
-                          <option key={`unmark:${step}`} value={`unmark:${step}`}>✗ Unmark {einStepLabels[step]}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {renderProgressManager(
+                      formation.id,
+                      "einProgress",
+                      einStepOrder,
+                      einStepLabels,
+                      einProgress
+                    )}
                   </TableCell>
                   <TableCell>
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-500">Current: {complianceStepLabels[currentCompliance]}</p>
-                      <select
-                        className="h-8 w-[200px] rounded-md border border-gray-200 bg-white px-2 text-xs"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            const [action, step] = e.target.value.split(':');
-                            const status = action === 'complete' ? 'completed' : 'pending';
-                            handleProgressUpdate(formation.id, "initialCompliance", step, status);
-                            e.currentTarget.value = "";
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Update progress</option>
-                        {complianceStepOrder.map((step) => (
-                          <option key={`complete:${step}`} value={`complete:${step}`}>✓ Complete {complianceStepLabels[step]}</option>
-                        ))}
-                        {complianceStepOrder.map((step) => (
-                          <option key={`unmark:${step}`} value={`unmark:${step}`}>✗ Unmark {complianceStepLabels[step]}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {renderProgressManager(
+                      formation.id,
+                      "initialCompliance",
+                      complianceStepOrder,
+                      complianceStepLabels,
+                      initialCompliance
+                    )}
                   </TableCell>
                   <TableCell>
                     <Button

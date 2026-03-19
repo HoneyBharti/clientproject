@@ -8,6 +8,7 @@ const {
   updateTaxFilingStatus,
   assignTaxFiling,
   requestTaxFilingDocuments,
+  uploadTaxFilingDocumentAsAdmin,
 } = require('../controllers/taxFilingController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -23,5 +24,6 @@ router.delete('/:id', deleteTaxFiling);
 router.patch('/:id/status', updateTaxFilingStatus);
 router.post('/:id/assign', assignTaxFiling);
 router.post('/:id/request-documents', requestTaxFilingDocuments);
+router.post('/:id/documents', uploadTaxFilingDocumentAsAdmin);
 
 module.exports = router;

@@ -200,6 +200,22 @@ exports.assignEvent = async (req, res) => {
   }
 };
 
+exports.deleteEvent = async (req, res) => {
+  try {
+    const event = await ComplianceEvent.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ message: 'Compliance event not found' });
+    }
+
+    await ComplianceTask.deleteMany({ event: event._id });
+    await ComplianceEvent.deleteOne({ _id: event._id });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 exports.requestDocuments = async (req, res) => {
   try {
     const { message } = req.body;

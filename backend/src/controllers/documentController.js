@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Document = require('../models/Document');
+const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { getS3Object, deleteS3Object } = require('../utils/s3Client');
 const { MAX_FILE_BYTES, parseBase64File, storeDocument } = require('../utils/documentStorage');
@@ -66,6 +67,42 @@ const normalizeDocumentType = (value) => {
   return allowedDocumentTypes.has(snake) ? snake : 'other';
 };
 
+const notifyAdmins = async ({ title, message, metadata = {}, link } = {}) => {
+  try {
+    const admins = await User.find({ role: 'admin' }).select('_id').lean();
+    if (!admins.length) return;
+    const payload = admins.map((admin) => ({
+      user: admin._id,
+      title,
+      message,
+      type: 'info',
+      category: 'document',
+      link,
+      metadata,
+    }));
+    await Notification.insertMany(payload);
+  } catch (error) {
+    console.error('Admin notification error:', error?.message || error);
+  }
+};
+
+const notifyUser = async (userId, { title, message, metadata = {}, link, type = 'info' } = {}) => {
+  if (!userId) return;
+  try {
+    await Notification.create({
+      user: userId,
+      title,
+      message,
+      type,
+      category: 'document',
+      link,
+      metadata,
+    });
+  } catch (error) {
+    console.error('User notification error:', error?.message || error);
+  }
+};
+
 exports.getMyDocuments = async (req, res) => {
   try {
     const docs = await Document.find({ user: req.user._id })
@@ -112,6 +149,18 @@ exports.uploadMyDocument = async (req, res) => {
       folder: folder || 'KYC',
       subfolder,
       documentType: normalizeDocumentType(documentType),
+    });
+
+    await notifyAdmins({
+      title: 'New client document uploaded',
+      message: `${req.user.name || req.user.email || 'A client'} uploaded ${fileName}.`,
+      metadata: {
+        userId: req.user._id,
+        documentId: doc._id,
+        folder: doc.folder,
+        documentType: doc.documentType,
+      },
+      link: '/admin/documents',
     });
 
     res.status(201).json({
@@ -183,6 +232,18 @@ exports.uploadOfficialDocumentAsAdmin = async (req, res) => {
       folder: folder || 'Compliance',
       subfolder,
       documentType: normalizeDocumentType(documentType),
+    });
+
+    await notifyUser(userId, {
+      title: 'New document available',
+      message: `Yourlegal uploaded ${fileName} to your document center.`,
+      metadata: {
+        documentId: doc._id,
+        folder: doc.folder,
+        documentType: doc.documentType,
+      },
+      link: '/dashboard',
+      type: 'success',
     });
 
     res.status(201).json({

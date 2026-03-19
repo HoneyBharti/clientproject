@@ -88,8 +88,14 @@ exports.updateCompanyProgress = async (req, res) => {
       for (let i = 0; i <= stepIndex; i++) {
         const currentStep = stepOrder[i];
         if (progressSection[currentStep]) {
-          progressSection[currentStep].status = 'completed';
-          progressSection[currentStep].completedAt = new Date();
+          const stepData = progressSection[currentStep];
+          if (stepData.status !== 'completed') {
+            stepData.status = 'completed';
+            stepData.completedAt = new Date();
+          } else if (!stepData.completedAt) {
+            // Preserve existing completion dates; backfill only when missing.
+            stepData.completedAt = new Date();
+          }
         }
       }
     } else if (status === 'pending') {

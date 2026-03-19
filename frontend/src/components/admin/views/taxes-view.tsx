@@ -43,6 +43,7 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedFiling, setSelectedFiling] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -54,6 +55,12 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [reportFile, setReportFile] = useState<File | null>(null);
+  const [reportFileKey, setReportFileKey] = useState(0);
+  const [reportType, setReportType] = useState("irs_documents");
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [isReportUploading, setIsReportUploading] = useState(false);
 
   const [form, setForm] = useState({
     companyId: "",
@@ -68,9 +75,32 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
 
   const adminUsers = useMemo(() => ctx?.userRecords || [], [ctx]);
 
+  const toBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
   const loadFilings = async () => {
     const data = await fetchJson(TAX_API_BASE);
     setFilings(data.filings || []);
+  };
+
+  const loadFilingDetails = async (filingId: string) => {
+    setDetailLoading(true);
+    setReportMessage("");
+    setReportError("");
+    try {
+      const data = await fetchJson(`${TAX_API_BASE}/${filingId}`);
+      setSelectedFiling(data.filing || null);
+      setActiveTab("details");
+    } catch (error: any) {
+      setMessage(error?.message || "Unable to load filing details.");
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const loadCompanies = async () => {
@@ -222,8 +252,8 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
   };
 
   const handleView = (filing: any) => {
-    setSelectedFiling(filing);
-    setActiveTab("details");
+    if (!filing?._id) return;
+    loadFilingDetails(filing._id);
   };
 
   const handleAssign = async (filingId: string, adminId: string) => {
@@ -276,6 +306,43 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
     await loadFilings();
     setRequestDialogOpen(false);
   };
+
+  const handleReportUpload = async () => {
+    if (!selectedFiling?._id) return;
+    if (!reportFile) {
+      setReportError("Select a report file to upload.");
+      return;
+    }
+    setReportError("");
+    setReportMessage("");
+    setIsReportUploading(true);
+    try {
+      const fileDataBase64 = await toBase64(reportFile);
+      await fetchJson(`${TAX_API_BASE}/${selectedFiling._id}/documents`, {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: reportFile.name,
+          mimeType: reportFile.type || "application/octet-stream",
+          fileDataBase64,
+          documentType: reportType,
+        }),
+      });
+      setReportMessage("Report uploaded and attached to this filing.");
+      setReportFile(null);
+      setReportFileKey((prev) => prev + 1);
+      await loadFilingDetails(selectedFiling._id);
+      await loadFilings();
+    } catch (error: any) {
+      setReportError(error?.message || "Unable to upload report.");
+    } finally {
+      setIsReportUploading(false);
+    }
+  };
+
+  const selectedFilingDocuments = useMemo(() => {
+    if (!selectedFiling?.documents) return [];
+    return Array.isArray(selectedFiling.documents) ? selectedFiling.documents : [];
+  }, [selectedFiling]);
 
   return (
     <div className="space-y-6">
@@ -492,7 +559,16 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
         </Card>
       )}
 
-      {activeTab === "details" && selectedFiling && (
+      {activeTab === "details" && detailLoading && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Loading filing details...</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">Please wait while we fetch the latest data.</CardContent>
+        </Card>
+      )}
+
+      {activeTab === "details" && !detailLoading && selectedFiling && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">{selectedFiling.filingName}</CardTitle>
@@ -528,8 +604,79 @@ export function TaxesView({ ctx }: { ctx: AdminViewContext }) {
                 ))}
               </div>
             </div>
+
+            <div>
+              <p className="text-sm font-semibold mb-2">Documents</p>
+              {selectedFilingDocuments.length ? (
+                <div className="space-y-2">
+                  {selectedFilingDocuments.map((doc: any) => {
+                    const docId = doc?._id || doc?.id;
+                    return (
+                      <div key={docId || doc.originalName} className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm">
+                        <div>
+                          <p className="font-medium">{doc.originalName || doc.name || "Document"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {doc.source === "legal_docs" ? "Admin Upload" : "Client Upload"} · {doc.documentType || doc.folder || "File"}
+                          </p>
+                        </div>
+                        {docId ? (
+                          <a href={`${API_BASE_URL}/documents/${docId}/download`} target="_blank" rel="noreferrer">
+                            <Button size="sm" variant="outline">Download</Button>
+                          </a>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No documents attached yet.</p>
+              )}
+            </div>
+
+            <div className="rounded-lg border p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Upload Report</p>
+                {reportMessage ? <span className="text-xs text-emerald-600">{reportMessage}</span> : null}
+              </div>
+              {reportError ? (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {reportError}
+                </div>
+              ) : null}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>Report Type</Label>
+                  <Select value={reportType} onValueChange={setReportType}>
+                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="irs_documents">IRS Document</SelectItem>
+                      <SelectItem value="state_filings">State Filing</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <Label>Report File</Label>
+                  <Input
+                    key={reportFileKey}
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.csv,.xlsx,.xls"
+                    onChange={(event) => setReportFile(event.target.files?.[0] || null)}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={handleReportUpload} disabled={isReportUploading || !reportFile}>
+                  {isReportUploading ? "Uploading..." : "Upload Report"}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === "details" && !detailLoading && !selectedFiling && (
+        <div className="text-sm text-muted-foreground">Select a filing to view details.</div>
       )}
 
       <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>

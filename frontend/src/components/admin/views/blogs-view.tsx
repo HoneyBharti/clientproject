@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 import type { AdminViewContext } from "./types";
 
-type BlogStatus = "draft" | "published";
+type BlogStatus = "draft" | "published" | "archived";
 
 type BlogRecord = {
   id: string;
@@ -24,8 +24,10 @@ type BlogRecord = {
   fullContent: string;
   author: string;
   category: string;
+  country?: string;
   tags: string[];
   status: BlogStatus;
+  featured?: boolean;
   createdAt: string;
   source?: "static" | "db";
 };
@@ -38,15 +40,19 @@ type BlogFormState = {
   fullContent: string;
   author: string;
   category: string;
+  country: string;
   tags: string;
   status: BlogStatus;
+  featured: boolean;
 };
 
 const categoryOptions = ["Tax", "Compliance", "Formation", "Bookkeeping", "Business Guides"];
+const countryOptions = ["Global", "USA", "UK", "UAE", "India", "Singapore", "Australia", "Netherlands", "Saudi Arabia"];
 
 const statusClass: Record<BlogStatus, string> = {
   draft: "bg-amber-100 text-amber-700 border-amber-200",
   published: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  archived: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const slugify = (value: string) =>
@@ -67,8 +73,10 @@ const createEmptyForm = (): BlogFormState => ({
   fullContent: "<p>Start writing your blog content here.</p>",
   author: "",
   category: "Tax",
+  country: "Global",
   tags: "",
   status: "draft",
+  featured: false,
 });
 
 const buildInitialBlogs = (contentQueue: any[]): BlogRecord[] => {
@@ -109,8 +117,10 @@ const toFormState = (blog: BlogRecord): BlogFormState => ({
   fullContent: blog.fullContent,
   author: blog.author,
   category: blog.category,
+  country: blog.country || "Global",
   tags: blog.tags.join(", "),
   status: blog.status,
+  featured: Boolean(blog.featured),
 });
 
 export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
@@ -204,8 +214,10 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
       featuredImage: form.image.trim() || createPlaceholderImage(form.title),
       excerpt: form.shortDescription.trim(),
       content: form.fullContent,
-      author: form.author.trim(),
+      authorName: form.author.trim(),
       category: form.category.trim(),
+      country: form.country.trim(),
+      featured: Boolean(form.featured),
       tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       status: form.status,
     };
@@ -240,7 +252,27 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
   const handleDeleteBlog = async () => {
     if (!blogToDelete) return;
     if (blogToDelete.id.startsWith("static:")) {
-      setFormMessage("Static blogs cannot be deleted. Edit and publish a new version instead.");
+      const payload = {
+        title: blogToDelete.title,
+        slug: blogToDelete.slug,
+        featuredImage: blogToDelete.image || createPlaceholderImage(blogToDelete.title),
+        excerpt: blogToDelete.shortDescription || "",
+        content: blogToDelete.shortDescription
+          ? `<p>${blogToDelete.shortDescription}</p>`
+          : "<p>Archived legacy blog.</p>",
+        authorName: blogToDelete.author || "YourLegal Team",
+        category: blogToDelete.category || "General",
+        country: blogToDelete.country || "Global",
+        tags: blogToDelete.tags || [],
+        status: "archived",
+        featured: false,
+      };
+      const result = await createBlog(payload);
+      if (!result.success) {
+        setFormMessage(result.error || "Unable to archive legacy blog.");
+        return;
+      }
+      setFormMessage(`Legacy blog "${blogToDelete.title}" archived.`);
       setBlogToDelete(null);
       return;
     }
@@ -362,7 +394,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
               />
             </div>
 
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
               <div className="space-y-2">
                 <p className="text-sm font-medium">Author Name</p>
                 <Input value={form.author} onChange={(e) => setForm((prev) => ({ ...prev, author: e.target.value }))} placeholder="Author name" className="text-sm" />
@@ -374,6 +406,17 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                   <SelectContent>
                     {categoryOptions.map((category) => (
                       <SelectItem key={category} value={category}>{category}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Country</p>
+                <Select value={form.country} onValueChange={(value) => setForm((prev) => ({ ...prev, country: value }))}>
+                  <SelectTrigger className="text-sm"><SelectValue placeholder="Select country" /></SelectTrigger>
+                  <SelectContent>
+                    {countryOptions.map((country) => (
+                      <SelectItem key={country} value={country}>{country}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -392,10 +435,21 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                   <SelectContent>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="published">Published</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={form.featured}
+                onChange={(e) => setForm((prev) => ({ ...prev, featured: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Feature this post on the blog homepage
+            </label>
 
             {formMessage ? (
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
@@ -426,6 +480,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                   <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="published">Published</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -443,9 +498,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                 </TableHeader>
                 <TableBody>
                   {filteredBlogs.length ? (
-                    filteredBlogs.map((blog) => {
-                      const isStatic = blog.id.startsWith("static:");
-                      return (
+                    filteredBlogs.map((blog) => (
                       <TableRow key={blog.id}>
                         <TableCell>
                           <div className="flex items-center gap-2 sm:gap-3">
@@ -478,7 +531,6 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                               variant="destructive"
                               onClick={() => setBlogToDelete(blog)}
                               className="h-8 px-2 sm:px-3"
-                              disabled={isStatic}
                             >
                               <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               <span className="text-xs">Delete</span>
@@ -486,8 +538,7 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                           </div>
                         </TableCell>
                       </TableRow>
-                      );
-                    })
+                    ))
                   ) : (
                     <TableRow>
                       <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">

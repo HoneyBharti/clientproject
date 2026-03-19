@@ -26,6 +26,10 @@ const blogSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  authorName: {
+    type: String,
+    trim: true
+  },
   status: {
     type: String,
     enum: ['draft', 'published', 'archived'],
@@ -34,6 +38,14 @@ const blogSchema = new mongoose.Schema({
   category: {
     type: String,
     trim: true
+  },
+  country: {
+    type: String,
+    trim: true
+  },
+  featured: {
+    type: Boolean,
+    default: false
   },
   tags: [String],
   featuredImage: String,

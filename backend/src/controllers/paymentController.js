@@ -1,4 +1,5 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const mongoose = require('mongoose');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const Order = require('../models/Order');
@@ -392,6 +393,69 @@ exports.getAllPayments = async (req, res) => {
   try {
     const payments = await Payment.find().populate('user', 'name email').sort('-createdAt');
     res.json({ success: true, payments });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const resolvePaymentIntentId = async (payment) => {
+  const metadata = payment?.metadata || {};
+  const stripePaymentId = payment?.stripePaymentId || '';
+  let paymentIntentId = metadata.paymentIntentId;
+
+  if (!paymentIntentId && typeof stripePaymentId === 'string' && stripePaymentId.startsWith('pi_')) {
+    paymentIntentId = stripePaymentId;
+  }
+
+  const sessionId =
+    metadata.checkoutSessionId ||
+    (typeof stripePaymentId === 'string' && stripePaymentId.startsWith('cs_') ? stripePaymentId : null);
+
+  if (!paymentIntentId && sessionId) {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const sessionPaymentIntent = session.payment_intent;
+    if (typeof sessionPaymentIntent === 'string') {
+      paymentIntentId = sessionPaymentIntent;
+    } else if (sessionPaymentIntent && typeof sessionPaymentIntent === 'object') {
+      paymentIntentId = sessionPaymentIntent.id;
+    }
+  }
+
+  return paymentIntentId || null;
+};
+
+exports.getPaymentReceipt = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(paymentId)) {
+      return res.status(400).json({ message: 'Invalid payment ID.' });
+    }
+
+    const payment = await Payment.findById(paymentId).lean();
+    if (!payment) {
+      return res.status(404).json({ message: 'Payment not found.' });
+    }
+
+    const paymentIntentId = await resolvePaymentIntentId(payment);
+    if (!paymentIntentId) {
+      return res.status(404).json({ message: 'Invoice not available for this payment.' });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ['latest_charge', 'charges'],
+    });
+
+    let charge = paymentIntent?.charges?.data?.[0] || paymentIntent?.latest_charge;
+    if (typeof charge === 'string') {
+      charge = await stripe.charges.retrieve(charge);
+    }
+
+    const receiptUrl = charge?.receipt_url;
+    if (!receiptUrl) {
+      return res.status(404).json({ message: 'Invoice not available for this payment.' });
+    }
+
+    res.json({ success: true, receiptUrl, paymentIntentId });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -2,6 +2,7 @@ const Formation = require('../models/Formation');
 const TaxFiling = require('../models/TaxFiling');
 const Document = require('../models/Document');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 const { MAX_FILE_BYTES, parseBase64File, storeDocument } = require('../utils/documentStorage');
 
@@ -25,6 +26,62 @@ const addTimelineEntry = (filing, label, message, userId) => {
     createdBy: userId,
     createdAt: new Date(),
   });
+};
+
+const notifyAdmins = async (title, message, metadata = {}) => {
+  try {
+    const admins = await User.find({ role: 'admin' }).select('_id').lean();
+    if (!admins.length) return;
+    const payload = admins.map((admin) => ({
+      user: admin._id,
+      title,
+      message,
+      type: 'info',
+      category: 'document',
+      metadata,
+      link: '/admin/taxes',
+    }));
+    await Notification.insertMany(payload);
+  } catch (error) {
+    console.error('Admin notification error:', error?.message || error);
+  }
+};
+
+const allowedDocumentTypes = new Set([
+  'passport',
+  'proof_of_address',
+  'pan',
+  'aadhaar',
+  'photo',
+  'bank_statement',
+  'tax_id',
+  'prior_tax_return',
+  'certificate_of_incorporation',
+  'operating_agreement',
+  'bylaws',
+  'ein_confirmation',
+  'irs_documents',
+  'state_filings',
+  'bank_account_documents',
+  'loan_documents',
+  'contract',
+  'nda',
+  'ip_assignment',
+  'shareholder_agreement',
+  'other',
+]);
+
+const normalizeDocumentType = (value) => {
+  if (!value) return 'other';
+  const raw = String(value).trim();
+  if (!raw) return 'other';
+  const snake = raw
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase();
+  if (snake === 'proofofaddress') return 'proof_of_address';
+  if (snake === 'bank_statements') return 'bank_statement';
+  return allowedDocumentTypes.has(snake) ? snake : 'other';
 };
 
 exports.getAllTaxFilings = async (req, res) => {
@@ -357,7 +414,65 @@ exports.uploadTaxFilingDocument = async (req, res) => {
         `${filing.filingName} has new uploaded documents.`,
         { taxFilingId: filing._id }
       );
+    } else {
+      await notifyAdmins(
+        'Documents uploaded',
+        `${filing.filingName} has new uploaded documents.`,
+        { taxFilingId: filing._id, documentId: doc._id, userId: filing.user }
+      );
     }
+
+    res.status(201).json({ success: true, documentId: doc._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.uploadTaxFilingDocumentAsAdmin = async (req, res) => {
+  try {
+    const { fileName, mimeType, fileDataBase64, documentType } = req.body;
+    if (!fileName || !mimeType || !fileDataBase64) {
+      return res.status(400).json({ message: 'fileName, mimeType, and fileDataBase64 are required.' });
+    }
+
+    const filing = await TaxFiling.findById(req.params.id);
+    if (!filing) {
+      return res.status(404).json({ message: 'Tax filing not found.' });
+    }
+
+    const buffer = parseBase64File(fileDataBase64);
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ message: 'Invalid file payload.' });
+    }
+    if (buffer.length > MAX_FILE_BYTES) {
+      return res.status(413).json({ message: 'File exceeds 10 MB limit.' });
+    }
+
+    const doc = await storeDocument({
+      userId: filing.user,
+      source: 'legal_docs',
+      status: 'verified',
+      fileName,
+      mimeType,
+      buffer,
+      uploadedBy: req.user._id,
+      taxFilingId: filing._id,
+      folder: 'Tax',
+      subfolder: filing.filingName || 'Tax Filing',
+      documentType: normalizeDocumentType(documentType || 'irs_documents'),
+    });
+
+    filing.documents = filing.documents || [];
+    filing.documents.push(doc._id);
+    addTimelineEntry(filing, 'Report Uploaded', `Admin uploaded report: ${fileName}.`, req.user._id);
+    await filing.save();
+
+    await createNotification(
+      filing.user,
+      'Tax filing report ready',
+      `${filing.filingName || 'Tax filing'} report is now available for download.`,
+      { taxFilingId: filing._id, documentId: doc._id }
+    );
 
     res.status(201).json({ success: true, documentId: doc._id });
   } catch (error) {

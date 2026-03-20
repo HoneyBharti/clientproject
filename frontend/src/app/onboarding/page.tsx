@@ -510,11 +510,94 @@ function OnboardingPageContent() {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim());
   };
 
+  const normalizeDigits = (value) => String(value ?? "").replace(/\D/g, "");
+
   const isValidPhone = (value) => {
     if (isBlank(value)) return false;
     const digits = String(value).replace(/\D/g, "");
     return digits.length >= 7 && digits.length <= 15;
   };
+
+  const verhoeffD = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+  ];
+  const verhoeffP = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+  ];
+  const verhoeffCheck = (digits) => {
+    let c = 0;
+    for (let i = digits.length - 1, j = 0; i >= 0; i--, j++) {
+      const num = Number(digits[i]);
+      if (Number.isNaN(num)) return false;
+      c = verhoeffD[c][verhoeffP[j % 8][num]];
+    }
+    return c === 0;
+  };
+
+  const isValidAadhaar = (value) => {
+    if (isBlank(value)) return false;
+    const digits = normalizeDigits(value);
+    if (digits.length !== 12) return false;
+    return verhoeffCheck(digits);
+  };
+
+  const isValidPan = (value) => {
+    if (isBlank(value)) return false;
+    const normalized = String(value).trim().toUpperCase();
+    return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(normalized);
+  };
+
+  const isValidDin = (value) => {
+    if (isBlank(value)) return false;
+    const digits = normalizeDigits(value);
+    return digits.length === 8;
+  };
+
+  const isValidGSTIN = (value) => {
+    if (isBlank(value)) return false;
+    const normalized = String(value).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalized);
+  };
+
+  const isValidEIN = (value) => {
+    if (isBlank(value)) return false;
+    const digits = normalizeDigits(value);
+    if (digits.length !== 9) return false;
+    if (digits === "000000000") return false;
+    if (digits.startsWith("00")) return false;
+    return true;
+  };
+
+  const isValidPassportNumber = (value) => {
+    if (isBlank(value)) return false;
+    const normalized = String(value).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (normalized.length < 6 || normalized.length > 12) return false;
+    return /^[A-Z0-9]+$/.test(normalized);
+  };
+
+  const isValidCIN = (value) => {
+    if (isBlank(value)) return false;
+    const normalized = String(value).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return /^[A-Z][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(normalized);
+  };
+
+  const isValidIndiaCompanyTaxId = (value) => isValidPan(value) || isValidCIN(value) || isValidGSTIN(value);
 
   const validateStakeholders = (missing) => {
     formData.stakeholders.forEach((stakeholder, index) => {
@@ -536,9 +619,18 @@ function OnboardingPageContent() {
       const isIndia = destination === "India" || formData.existingCompany.country === "India";
       if (isIndia) {
         if (isBlank(stakeholder.pan)) missing.push(`${labelPrefix} PAN`);
+        if (!isBlank(stakeholder.pan) && !isValidPan(stakeholder.pan)) {
+          missing.push(`${labelPrefix} PAN format`);
+        }
         if (isBlank(stakeholder.aadhaar)) missing.push(`${labelPrefix} Aadhaar`);
+        if (!isBlank(stakeholder.aadhaar) && !isValidAadhaar(stakeholder.aadhaar)) {
+          missing.push(`${labelPrefix} Aadhaar number`);
+        }
         if (stakeholder.hasDin === "Yes" && isBlank(stakeholder.dinNumber)) {
           missing.push(`${labelPrefix} DIN number`);
+        }
+        if (stakeholder.hasDin === "Yes" && !isBlank(stakeholder.dinNumber) && !isValidDin(stakeholder.dinNumber)) {
+          missing.push(`${labelPrefix} DIN number format`);
         }
         // Document validation for India
         if (!stakeholder.documents.pan) missing.push(`${labelPrefix} PAN document`);
@@ -546,6 +638,9 @@ function OnboardingPageContent() {
         if (!stakeholder.documents.proofOfAddress) missing.push(`${labelPrefix} Proof of Address document`);
       } else {
         if (isBlank(stakeholder.passportNo)) missing.push(`${labelPrefix} passport number`);
+        if (!isBlank(stakeholder.passportNo) && !isValidPassportNumber(stakeholder.passportNo)) {
+          missing.push(`${labelPrefix} passport number format`);
+        }
         // Document validation for non-India
         if (!stakeholder.documents.passport) missing.push(`${labelPrefix} passport document`);
         if (!stakeholder.documents.proofOfAddress) missing.push(`${labelPrefix} Proof of Address document`);
@@ -617,6 +712,20 @@ function OnboardingPageContent() {
       if (isBlank(formData.existingCompany.entityType)) missing.push("Entity structure");
       if (isBlank(formData.existingCompany.name)) missing.push("Legal company name");
       if (isBlank(formData.existingCompany.taxId)) missing.push("Tax ID");
+      if (
+        formData.existingCompany.country === "India" &&
+        !isBlank(formData.existingCompany.taxId) &&
+        !isValidIndiaCompanyTaxId(formData.existingCompany.taxId)
+      ) {
+        missing.push("Tax ID format (PAN/CIN/GSTIN)");
+      }
+      if (
+        formData.existingCompany.country === "USA" &&
+        !isBlank(formData.existingCompany.taxId) &&
+        !isValidEIN(formData.existingCompany.taxId)
+      ) {
+        missing.push("Tax ID format (EIN)");
+      }
     }
 
     if (stepName === "Required Services") {

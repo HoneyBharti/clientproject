@@ -384,7 +384,7 @@ exports.uploadTaxFilingDocument = async (req, res) => {
       return res.status(400).json({ message: 'Invalid file payload.' });
     }
     if (buffer.length > MAX_FILE_BYTES) {
-      return res.status(413).json({ message: 'File exceeds 10 MB limit.' });
+      return res.status(413).json({ message: 'File exceeds 15 MB limit.' });
     }
 
     const doc = await storeDocument({
@@ -446,7 +446,7 @@ exports.uploadTaxFilingDocumentAsAdmin = async (req, res) => {
       return res.status(400).json({ message: 'Invalid file payload.' });
     }
     if (buffer.length > MAX_FILE_BYTES) {
-      return res.status(413).json({ message: 'File exceeds 10 MB limit.' });
+      return res.status(413).json({ message: 'File exceeds 15 MB limit.' });
     }
 
     const doc = await storeDocument({

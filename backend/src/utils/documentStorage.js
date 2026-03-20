@@ -2,7 +2,7 @@ const { randomUUID } = require('crypto');
 const Document = require('../models/Document');
 const { uploadToS3 } = require('./s3Client');
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
 const parseBase64File = (rawValue) => {
   if (!rawValue || typeof rawValue !== 'string') {

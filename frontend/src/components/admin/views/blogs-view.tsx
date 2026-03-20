@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,6 +47,12 @@ type BlogFormState = {
   featured: boolean;
 };
 
+type AiBlockState = {
+  tldr: string;
+  directAnswer: string;
+  decisionSummary: string;
+};
+
 const categoryOptions = ["Tax", "Compliance", "Formation", "Bookkeeping", "Business Guides"];
 const countryOptions = ["Global", "USA", "UK", "UAE", "India", "Singapore", "Australia", "Netherlands", "Saudi Arabia"];
 
@@ -78,6 +85,99 @@ const createEmptyForm = (): BlogFormState => ({
   status: "draft",
   featured: false,
 });
+
+const createEmptyAiBlock = (): AiBlockState => ({
+  tldr: "",
+  directAnswer: "",
+  decisionSummary: "",
+});
+
+const toParagraphs = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  return trimmed
+    .split(/\n\s*\n/)
+    .map((part) => `<p>${part.replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+};
+
+const buildAiBlockHtml = (aiBlock: AiBlockState) => {
+  const blocks = [
+    { title: "TL;DR", content: aiBlock.tldr },
+    { title: "Direct Question Answer", content: aiBlock.directAnswer },
+    { title: "Decision Summary", content: aiBlock.decisionSummary },
+  ].filter((block) => Boolean(String(block.content || "").trim()));
+
+  if (!blocks.length) return "";
+
+  const body = blocks
+    .map((block) => `<h3>${block.title}</h3>${toParagraphs(block.content)}`)
+    .join("");
+
+  return `<section><h2>AI-Ready Answer Block</h2>${body}</section>`;
+};
+
+const formatInline = (value: string) =>
+  value.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+const convertPlainTextToHtml = (value: string) => {
+  const lines = String(value || "").split(/\r?\n/);
+  let html = "";
+  let inUl = false;
+  let inOl = false;
+
+  const closeLists = () => {
+    if (inUl) {
+      html += "</ul>";
+      inUl = false;
+    }
+    if (inOl) {
+      html += "</ol>";
+      inOl = false;
+    }
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeLists();
+      return;
+    }
+
+    if (/^#{1,3}\s+/.test(trimmed)) {
+      closeLists();
+      const level = Math.min(trimmed.match(/^#+/)?.[0].length || 2, 3);
+      html += `<h${level}>${formatInline(trimmed.replace(/^#+\s+/, ""))}</h${level}>`;
+      return;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (!inOl) {
+        closeLists();
+        html += "<ol>";
+        inOl = true;
+      }
+      html += `<li>${formatInline(trimmed.replace(/^\d+\.\s+/, ""))}</li>`;
+      return;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (!inUl) {
+        closeLists();
+        html += "<ul>";
+        inUl = true;
+      }
+      html += `<li>${formatInline(trimmed.replace(/^[-*]\s+/, ""))}</li>`;
+      return;
+    }
+
+    closeLists();
+    html += `<p>${formatInline(trimmed)}</p>`;
+  });
+
+  closeLists();
+  return html;
+};
 
 const buildInitialBlogs = (contentQueue: any[]): BlogRecord[] => {
   const descriptions = [
@@ -133,6 +233,9 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
   const [formMessage, setFormMessage] = useState("");
   const [viewBlog, setViewBlog] = useState<BlogRecord | null>(null);
   const [blogToDelete, setBlogToDelete] = useState<BlogRecord | null>(null);
+  const [aiBlock, setAiBlock] = useState<AiBlockState>(createEmptyAiBlock);
+  const [isHtmlMode, setIsHtmlMode] = useState(false);
+  const [formatMessage, setFormatMessage] = useState("");
 
   const editorRef = useRef<HTMLDivElement | null>(null);
 
@@ -141,6 +244,12 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
       editorRef.current.innerHTML = form.fullContent;
     }
   }, [form.fullContent]);
+
+  useEffect(() => {
+    if (!isHtmlMode && editorRef.current) {
+      editorRef.current.innerHTML = form.fullContent;
+    }
+  }, [isHtmlMode, form.fullContent]);
 
   const filteredBlogs = useMemo(
     () =>
@@ -169,6 +278,9 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
     setForm(createEmptyForm());
     setImageInputKey((prev) => prev + 1);
     setFormMessage("");
+    setAiBlock(createEmptyAiBlock());
+    setIsHtmlMode(false);
+    setFormatMessage("");
   };
 
   const handleTitleChange = (value: string) => {
@@ -247,6 +359,47 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
     setEditingId(blog.id);
     setForm(toFormState(blog));
     setFormMessage("");
+    setAiBlock(createEmptyAiBlock());
+    setFormatMessage("");
+    setIsHtmlMode(false);
+  };
+
+  const insertHtmlSnippet = (snippet: string, position: "top" | "bottom" = "top") => {
+    if (!snippet) return;
+    const current = form.fullContent || "";
+    const next =
+      position === "top" ? `${snippet}\n${current}`.trim() : `${current}\n${snippet}`.trim();
+    setForm((prev) => ({ ...prev, fullContent: next }));
+    if (editorRef.current) {
+      editorRef.current.innerHTML = next;
+    }
+  };
+
+  const handleInsertAiBlock = (position: "top" | "bottom") => {
+    const snippet = buildAiBlockHtml(aiBlock);
+    if (!snippet) {
+      setFormMessage("Add AI answer block content before inserting.");
+      return;
+    }
+    insertHtmlSnippet(snippet, position);
+    setFormMessage(`AI answer block inserted (${position === "top" ? "top" : "bottom"}).`);
+  };
+
+  const handleAutoFormat = () => {
+    if (form.fullContent.includes("<")) {
+      setFormatMessage("Content already includes HTML. Paste plain text to use auto-format.");
+      return;
+    }
+    const formatted = convertPlainTextToHtml(form.fullContent);
+    if (!formatted) {
+      setFormatMessage("Nothing to format.");
+      return;
+    }
+    setForm((prev) => ({ ...prev, fullContent: formatted }));
+    if (editorRef.current) {
+      editorRef.current.innerHTML = formatted;
+    }
+    setFormatMessage("Plain text converted to HTML.");
   };
 
   const handleDeleteBlog = async () => {
@@ -371,6 +524,15 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
               <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <p className="text-sm font-medium">Full Content</p>
                 <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsHtmlMode((prev) => !prev)}
+                    className="h-8 px-2.5"
+                  >
+                    {isHtmlMode ? "Rich Editor" : "Edit HTML"}
+                  </Button>
                   <Button type="button" size="sm" variant="outline" onClick={() => applyHeading()} className="h-8 px-2.5">
                     <Heading1 className="h-3.5 w-3.5" />
                   </Button>
@@ -385,13 +547,73 @@ export function BlogsView({ ctx }: { ctx: AdminViewContext }) {
                   </Button>
                 </div>
               </div>
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={(e) => setForm((prev) => ({ ...prev, fullContent: e.currentTarget?.innerHTML || prev.fullContent }))}
-                className="min-h-[180px] sm:min-h-[220px] rounded-lg border bg-white p-3 sm:p-4 text-sm leading-6 sm:leading-7 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              {isHtmlMode ? (
+                <Textarea
+                  value={form.fullContent}
+                  onChange={(e) => setForm((prev) => ({ ...prev, fullContent: e.target.value }))}
+                  className="min-h-[200px] font-mono text-xs sm:text-sm"
+                />
+              ) : (
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => setForm((prev) => ({ ...prev, fullContent: e.currentTarget?.innerHTML || prev.fullContent }))}
+                  className="min-h-[180px] sm:min-h-[220px] rounded-lg border bg-white p-3 sm:p-4 text-sm leading-6 sm:leading-7 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
+              {isHtmlMode ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <Button type="button" size="sm" variant="outline" onClick={handleAutoFormat}>
+                    Auto-format plain text
+                  </Button>
+                  {formatMessage ? <span>{formatMessage}</span> : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">AI-Ready Answer Block</p>
+                <p className="text-xs text-muted-foreground">
+                  Use this for TL;DR, Direct Answer, and Decision Summary. Insert it at the top of the article.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">TL;DR</Label>
+                <Textarea
+                  rows={2}
+                  value={aiBlock.tldr}
+                  onChange={(e) => setAiBlock((prev) => ({ ...prev, tldr: e.target.value }))}
+                  placeholder="Short summary for quick answers."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Direct Question Answer</Label>
+                <Textarea
+                  rows={2}
+                  value={aiBlock.directAnswer}
+                  onChange={(e) => setAiBlock((prev) => ({ ...prev, directAnswer: e.target.value }))}
+                  placeholder="What is this about? Who is it for? When is it relevant?"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Decision Summary</Label>
+                <Textarea
+                  rows={2}
+                  value={aiBlock.decisionSummary}
+                  onChange={(e) => setAiBlock((prev) => ({ ...prev, decisionSummary: e.target.value }))}
+                  placeholder="Who should act? Who can ignore?"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => handleInsertAiBlock("top")}>
+                  Insert at Top
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => handleInsertAiBlock("bottom")}>
+                  Append to Bottom
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">

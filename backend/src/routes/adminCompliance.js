@@ -7,6 +7,7 @@ const {
   getEvents,
   updateEventStatus,
   assignEvent,
+  createManualEvent,
   deleteEvent,
   requestDocuments,
   getTasks,
@@ -29,6 +30,7 @@ router.delete('/rules/:id', deleteRule);
 
 // Events
 router.get('/events', getEvents);
+router.post('/events/manual', createManualEvent);
 router.patch('/events/:id/status', updateEventStatus);
 router.post('/events/:id/assign', assignEvent);
 router.post('/events/:id/request-documents', requestDocuments);

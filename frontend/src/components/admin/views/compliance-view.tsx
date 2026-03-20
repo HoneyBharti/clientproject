@@ -45,12 +45,15 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
   const [rules, setRules] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [formations, setFormations] = useState<any[]>([]);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [ruleMessage, setRuleMessage] = useState("");
   const [seedMessage, setSeedMessage] = useState("");
   const [taskMessage, setTaskMessage] = useState("");
   const [eventMessage, setEventMessage] = useState("");
+  const [manualMessage, setManualMessage] = useState("");
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
   const [requestingEventId, setRequestingEventId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
@@ -85,7 +88,17 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
     notes: "",
   });
 
-  const adminUsers = useMemo(() => ctx?.userRecords || [], [ctx]);
+  const [manualForm, setManualForm] = useState({
+    companyId: "",
+    name: "",
+    description: "",
+    jurisdiction: "federal",
+    state: "",
+    dueDate: "",
+    status: "upcoming",
+    notes: "",
+    assignedAdmin: "",
+  });
 
   const loadRules = async () => {
     const data = await fetchJson(`${COMPLIANCE_API_BASE}/rules`);
@@ -102,11 +115,21 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
     setTasks(data.tasks || []);
   };
 
+  const loadFormations = async () => {
+    const data = await fetchJson(`${API_BASE_URL}/formations?limit=200`);
+    setFormations(data.formations || []);
+  };
+
+  const loadAdminUsers = async () => {
+    const data = await fetchJson(`${API_BASE_URL}/admin/admin-users`);
+    setAdminUsers(data.users || []);
+  };
+
   const loadAll = async () => {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      await Promise.all([loadRules(), loadEvents(), loadTasks()]);
+      await Promise.all([loadRules(), loadEvents(), loadTasks(), loadFormations(), loadAdminUsers()]);
     } catch (error: any) {
       setErrorMessage(error?.message || "Unable to load compliance data.");
     } finally {
@@ -117,6 +140,20 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (!manualForm.companyId) return;
+    const formation = formations.find((item) => item._id === manualForm.companyId);
+    if (!formation) return;
+    if (manualForm.jurisdiction === "state") {
+      const nextState = formation.state || "";
+      if (manualForm.state !== nextState) {
+        setManualForm((prev) => ({ ...prev, state: nextState }));
+      }
+    } else if (manualForm.state) {
+      setManualForm((prev) => ({ ...prev, state: "" }));
+    }
+  }, [manualForm.companyId, manualForm.jurisdiction, manualForm.state, formations]);
 
   const resolveClientName = (event: any) =>
     event.company?.companyName || event.user?.companyName || event.user?.name || "Unknown";
@@ -143,6 +180,16 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [events]);
+
+  const formationOptions = useMemo(() => {
+    return formations
+      .map((formation) => ({
+        id: formation._id,
+        label: `${formation.companyName || "Company"} · ${formation.user?.email || formation.user?.name || "User"}`,
+        state: formation.state,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [formations]);
 
   const companyFilteredEvents = useMemo(() => {
     if (companyFilter === "all") return events;
@@ -369,6 +416,45 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
       setEventMessage("Compliance filing deleted.");
     } catch (error: any) {
       setEventMessage(error?.message || "Unable to delete compliance filing.");
+    }
+  };
+
+  const handleCreateManualEvent = async () => {
+    if (!manualForm.companyId || !manualForm.name.trim() || !manualForm.dueDate) {
+      setManualMessage("Select a company, enter a name, and choose a due date.");
+      return;
+    }
+
+    try {
+      await fetchJson(`${COMPLIANCE_API_BASE}/events/manual`, {
+        method: "POST",
+        body: JSON.stringify({
+          companyId: manualForm.companyId,
+          name: manualForm.name.trim(),
+          description: manualForm.description.trim() || undefined,
+          jurisdiction: manualForm.jurisdiction,
+          state: manualForm.jurisdiction === "state" ? manualForm.state.trim() : undefined,
+          dueDate: manualForm.dueDate,
+          status: manualForm.status,
+          notes: manualForm.notes.trim() || undefined,
+          assignedAdmin: manualForm.assignedAdmin || undefined,
+        }),
+      });
+      setManualMessage("Manual compliance added.");
+      setManualForm({
+        companyId: "",
+        name: "",
+        description: "",
+        jurisdiction: "federal",
+        state: "",
+        dueDate: "",
+        status: "upcoming",
+        notes: "",
+        assignedAdmin: "",
+      });
+      await loadEvents();
+    } catch (error: any) {
+      setManualMessage(error?.message || "Unable to create manual compliance.");
     }
   };
 
@@ -745,100 +831,203 @@ export function ComplianceView({ ctx }: { ctx: AdminViewContext }) {
       )}
 
       {activeTab === "events" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Compliance Events</CardTitle>
-            <CardDescription>Assign admins, update status, and request documents.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {eventMessage ? <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">{eventMessage}</div> : null}
-            <div className="flex flex-wrap gap-3">
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="h-10 w-full sm:w-64"><SelectValue placeholder="All companies" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All companies</SelectItem>
-                  {companyOptions.map((company) => (
-                    <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={eventStatusFilter} onValueChange={setEventStatusFilter}>
-                <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Filter status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  {Object.keys(statusStyles).map((status) => (
-                    <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={eventSort} onValueChange={setEventSort}>
-                <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Sort by" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="due_asc">Due date (soonest)</SelectItem>
-                  <SelectItem value="due_desc">Due date (latest)</SelectItem>
-                  <SelectItem value="client_asc">Client (A-Z)</SelectItem>
-                  <SelectItem value="client_desc">Client (Z-A)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Compliance</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Assigned Admin</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedEvents.map((event) => (
-                  <TableRow key={event._id}>
-                    <TableCell>
-                      <p className="font-medium">{event.company?.companyName || event.user?.companyName || "Unknown"}</p>
-                      <p className="text-xs text-muted-foreground">{event.company?.state || event.rule?.state || "Federal"}</p>
-                    </TableCell>
-                    <TableCell>{event.rule?.name || "Compliance filing"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{event.dueDate ? new Date(event.dueDate).toLocaleDateString() : "N/A"}</TableCell>
-                    <TableCell>
-                      <Select value={event.status} onValueChange={(value) => handleUpdateEventStatus(event._id, value)}>
-                        <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {Object.keys(statusStyles).map((status) => (
-                            <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={event.assignedAdmin?._id || "unassigned"}
-                        onValueChange={(value) => handleAssignEvent(event._id, value === "unassigned" ? "" : value)}
-                      >
-                        <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unassigned">Unassigned</SelectItem>
-                          {adminUsers.map((admin: any) => (
-                            <SelectItem key={admin.id || admin._id} value={admin.id || admin._id}>
-                              {admin.name || admin.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openRequestDialog(event._id)}>Request Docs</Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleDeleteEvent(event._id)}>Delete</Button>
-                      </div>
-                    </TableCell>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Add Manual Compliance</CardTitle>
+              <CardDescription>Create a one-off compliance item for a specific client.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Company</Label>
+                  <Select value={manualForm.companyId} onValueChange={(value) => setManualForm((prev) => ({ ...prev, companyId: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
+                    <SelectContent>
+                      {formationOptions.map((formation) => (
+                        <SelectItem key={formation.id} value={formation.id}>{formation.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Compliance Name</Label>
+                  <Input value={manualForm.name} onChange={(e) => setManualForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="e.g., BOI Report Follow-up" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>Description</Label>
+                <Textarea
+                  rows={2}
+                  value={manualForm.description}
+                  onChange={(e) => setManualForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Optional details for the client"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>Jurisdiction</Label>
+                  <Select value={manualForm.jurisdiction} onValueChange={(value) => setManualForm((prev) => ({ ...prev, jurisdiction: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Jurisdiction" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="federal">Federal</SelectItem>
+                      <SelectItem value="state">State</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>State</Label>
+                  <Input
+                    value={manualForm.state}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, state: e.target.value }))}
+                    placeholder="Optional (e.g., WY)"
+                    disabled={manualForm.jurisdiction !== "state"}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Due Date</Label>
+                  <Input type="date" value={manualForm.dueDate} onChange={(e) => setManualForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Status</Label>
+                  <Select value={manualForm.status} onValueChange={(value) => setManualForm((prev) => ({ ...prev, status: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(statusStyles).map((status) => (
+                        <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Assign Admin</Label>
+                  <Select
+                    value={manualForm.assignedAdmin || "unassigned"}
+                    onValueChange={(value) => setManualForm((prev) => ({ ...prev, assignedAdmin: value === "unassigned" ? "" : value }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Assign admin" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {adminUsers.map((admin: any) => (
+                        <SelectItem key={admin.id || admin._id} value={admin.id || admin._id}>
+                          {admin.name || admin.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>Internal Notes</Label>
+                <Textarea
+                  rows={2}
+                  value={manualForm.notes}
+                  onChange={(e) => setManualForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Optional internal notes"
+                />
+              </div>
+              {manualMessage ? <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">{manualMessage}</div> : null}
+              <Button onClick={handleCreateManualEvent}>Create Compliance</Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Compliance Events</CardTitle>
+              <CardDescription>Assign admins, update status, and request documents.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {eventMessage ? <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">{eventMessage}</div> : null}
+              <div className="flex flex-wrap gap-3">
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger className="h-10 w-full sm:w-64"><SelectValue placeholder="All companies" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All companies</SelectItem>
+                    {companyOptions.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={eventStatusFilter} onValueChange={setEventStatusFilter}>
+                  <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Filter status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {Object.keys(statusStyles).map((status) => (
+                      <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={eventSort} onValueChange={setEventSort}>
+                  <SelectTrigger className="h-10 w-full sm:w-56"><SelectValue placeholder="Sort by" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="due_asc">Due date (soonest)</SelectItem>
+                    <SelectItem value="due_desc">Due date (latest)</SelectItem>
+                    <SelectItem value="client_asc">Client (A-Z)</SelectItem>
+                    <SelectItem value="client_desc">Client (Z-A)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Compliance</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assigned Admin</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {sortedEvents.map((event) => (
+                    <TableRow key={event._id}>
+                      <TableCell>
+                        <p className="font-medium">{event.company?.companyName || event.user?.companyName || "Unknown"}</p>
+                        <p className="text-xs text-muted-foreground">{event.company?.state || event.rule?.state || "Federal"}</p>
+                      </TableCell>
+                      <TableCell>{event.rule?.name || "Compliance filing"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{event.dueDate ? new Date(event.dueDate).toLocaleDateString() : "N/A"}</TableCell>
+                      <TableCell>
+                        <Select value={event.status} onValueChange={(value) => handleUpdateEventStatus(event._id, value)}>
+                          <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.keys(statusStyles).map((status) => (
+                              <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={event.assignedAdmin?._id || "unassigned"}
+                          onValueChange={(value) => handleAssignEvent(event._id, value === "unassigned" ? "" : value)}
+                        >
+                          <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {adminUsers.map((admin: any) => (
+                              <SelectItem key={admin.id || admin._id} value={admin.id || admin._id}>
+                                {admin.name || admin.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openRequestDialog(event._id)}>Request Docs</Button>
+                          <Button size="sm" variant="destructive" onClick={() => handleDeleteEvent(event._id)}>Delete</Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {activeTab === "tasks" && (

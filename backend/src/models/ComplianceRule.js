@@ -55,6 +55,10 @@ const complianceRuleSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isManual: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

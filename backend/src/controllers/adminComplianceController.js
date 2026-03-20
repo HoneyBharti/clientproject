@@ -1,6 +1,7 @@
 const ComplianceRule = require('../models/ComplianceRule');
 const ComplianceEvent = require('../models/ComplianceEvent');
 const ComplianceTask = require('../models/ComplianceTask');
+const Formation = require('../models/Formation');
 const { createComplianceNotification, generateComplianceEventsForAllFormations } = require('../utils/complianceService');
 
 const parseDueDateFilter = (query) => {
@@ -16,8 +17,111 @@ const parseDueDateFilter = (query) => {
 
 exports.getRules = async (req, res) => {
   try {
-    const rules = await ComplianceRule.find().sort('-createdAt');
+    const rules = await ComplianceRule.find({ isManual: { $ne: true } }).sort('-createdAt');
     res.json({ success: true, rules });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const normalizeManualStatus = (status, dueDate) => {
+  if (status) return status;
+  if (!dueDate) return 'upcoming';
+  return dueDate < new Date() ? 'overdue' : 'upcoming';
+};
+
+exports.createManualEvent = async (req, res) => {
+  try {
+    const {
+      companyId,
+      userId,
+      name,
+      description,
+      jurisdiction = 'federal',
+      state,
+      dueDate,
+      status,
+      notes,
+      assignedAdmin,
+    } = req.body || {};
+
+    if (!companyId || !name || !dueDate) {
+      return res.status(400).json({ message: 'Company, name, and due date are required.' });
+    }
+
+    const formation = await Formation.findById(companyId).populate('user', 'name email');
+    if (!formation) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+
+    const resolvedUserId = userId || formation.user?._id || formation.user;
+    if (!resolvedUserId) {
+      return res.status(400).json({ message: 'User is required to create a compliance event.' });
+    }
+
+    const parsedDueDate = new Date(dueDate);
+    if (Number.isNaN(parsedDueDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid due date.' });
+    }
+
+    const normalizedJurisdiction = jurisdiction === 'state' ? 'state' : 'federal';
+    const resolvedState =
+      normalizedJurisdiction === 'state'
+        ? (state || formation.state || '').trim()
+        : '';
+
+    const validStatuses = new Set([
+      'upcoming',
+      'in_progress',
+      'documents_requested',
+      'filed',
+      'completed',
+      'overdue',
+    ]);
+    const normalizedStatus = normalizeManualStatus(status, parsedDueDate);
+    if (!validStatuses.has(normalizedStatus)) {
+      return res.status(400).json({ message: 'Invalid status.' });
+    }
+
+    const rule = await ComplianceRule.create({
+      name: String(name).trim(),
+      description: description ? String(description).trim() : '',
+      jurisdiction: normalizedJurisdiction,
+      state: resolvedState,
+      frequency: 'annual',
+      dueRule: {
+        type: 'fixed_date',
+        month: parsedDueDate.getMonth() + 1,
+        day: parsedDueDate.getDate(),
+      },
+      isActive: false,
+      isManual: true,
+    });
+
+    const event = await ComplianceEvent.create({
+      company: formation._id,
+      user: resolvedUserId,
+      rule: rule._id,
+      dueDate: parsedDueDate,
+      status: normalizedStatus,
+      notes: notes ? String(notes).trim() : '',
+      assignedAdmin: assignedAdmin || undefined,
+    });
+
+    await createComplianceNotification(
+      resolvedUserId,
+      'New compliance item added',
+      `${rule.name} has been added with a due date of ${parsedDueDate.toLocaleDateString()}.`,
+      { eventId: event._id }
+    );
+
+    const populated = await ComplianceEvent.findById(event._id)
+      .populate('company', 'companyName state entityType')
+      .populate('user', 'name email companyName')
+      .populate('rule', 'name jurisdiction state frequency description')
+      .populate('assignedAdmin', 'name email');
+
+    res.status(201).json({ success: true, event: populated });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

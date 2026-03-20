@@ -88,10 +88,10 @@ exports.getMyComplianceEvents = async (req, res) => {
     for (const event of events) {
       const dateKey = event.dueDate ? new Date(event.dueDate).toISOString().slice(0, 10) : '';
       const companyId = event.company?._id ? String(event.company._id) : '';
-      const ruleName = event.rule?.name || '';
+      const ruleId = event.rule?._id ? String(event.rule._id) : '';
       const jurisdiction = event.rule?.jurisdiction || '';
       const state = event.rule?.state || '';
-      const key = `${companyId}|${ruleName}|${jurisdiction}|${state}|${dateKey}`;
+      const key = `${companyId}|${ruleId}|${jurisdiction}|${state}|${dateKey}`;
       if (seen.has(key)) continue;
       seen.add(key);
       deduped.push(event);

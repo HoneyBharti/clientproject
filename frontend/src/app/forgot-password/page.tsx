@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api-base";
@@ -40,6 +41,11 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <form onSubmit={handleSubmit} className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-gray-200 p-8 space-y-4">
+        <div className="flex justify-center">
+          <Link href="/" className="inline-flex">
+            <Image src="/logo.png" alt="YourLegal Logo" width={160} height={40} />
+          </Link>
+        </div>
         <h1 className="text-2xl font-bold text-gray-900 text-center">Reset Password</h1>
         <p className="text-sm text-gray-600 text-center">Enter your email and we'll send you a reset link.</p>
         <div className="space-y-2">
